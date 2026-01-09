@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/package.json",
   "name": "figma-foreign-components",
   "version": "1.0.0",
   "description": "A Figma plugin to find and list foreign components",
