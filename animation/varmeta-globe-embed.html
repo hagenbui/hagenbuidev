@@ -17,7 +17,6 @@ iframe { display:block; width:100%; height:100%; border:none; background:transpa
     position: relative;
     width: 100%;
     height: 100%;
-    min-height: 400px;
     overflow: hidden;
     background: transparent;
   }
@@ -85,9 +84,9 @@ function frame() {
   camera.aspect = W / H;
 
   // Desired globe radius in px:
-  // Dynamically scale the globe so that the top hemisphere and its arcs (rising up to ~1.3 * radiusPx)
-  // fit within the container height H, and the width of the globe fits within W.
-  const radiusPx = Math.min(W / 2.2, H / 1.3);
+  // Dynamically scale the globe so that the top hemisphere and its arcs (rising up to ~1.4 * radiusPx)
+  // fit within the container height H (leaving a top safety margin), and the width fits W.
+  const radiusPx = Math.max(10, Math.min(W / 2.2, (H - 15) / 1.4));
 
   // Camera distance so globe radius projects to radiusPx.
   // projectedRadiusPx = R / (tan(fovR/2) * camZ) * (W/2)
