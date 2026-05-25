@@ -191,9 +191,19 @@ const arcData = [];
 function buildArc(fromLL, toLL, delay) {
   const s = ll2v(fromLL.lat, fromLL.lon, R);
   const e = ll2v(toLL.lat,   toLL.lon,   R);
-  const mid = s.clone().add(e).multiplyScalar(0.5);
-  mid.normalize().multiplyScalar(R * (1 + s.distanceTo(e) / R * 0.52));
-  const pts = new THREE.QuadraticBezierCurve3(s, mid, e).getPoints(80);
+  const dist = s.distanceTo(e);
+  
+  // Calculate mid-point normal (direction straight up from the middle of the path)
+  const midNormal = s.clone().add(e).normalize();
+  
+  // Lift factor based on distance
+  const lift = dist * 0.45;
+  
+  // cp1 and cp2 extend outward along start/end normals and are pulled towards midNormal
+  const cp1 = s.clone().multiplyScalar(1 + lift / R * 0.5).addScaledVector(midNormal, lift * 0.5);
+  const cp2 = e.clone().multiplyScalar(1 + lift / R * 0.5).addScaledVector(midNormal, lift * 0.5);
+  
+  const pts = new THREE.CubicBezierCurve3(s, cp1, cp2, e).getPoints(120);
   globe.add(new THREE.Line(
     new THREE.BufferGeometry().setFromPoints(pts),
     new THREE.LineBasicMaterial({ color: C.arcBase, transparent: true, opacity: 0.85 })
@@ -203,15 +213,11 @@ function buildArc(fromLL, toLL, delay) {
   const hlLine = new THREE.Line(hlGeo, hlMat);
   hlLine.geometry.setDrawRange(0, 0);
   globe.add(hlLine);
-  arcData.push({ hlLine, hlMat, total: 81, life: -delay, dur: 2.8, gap: 1.4, segLen: 14 });
+  arcData.push({ hlLine, hlMat, total: 121, life: -delay, dur: 2.8, gap: 1.4, segLen: 22 });
 }
 
 // Hub to each city
 CITIES.forEach((c, i) =&gt; buildArc(HUB, c, i * 0.5));
-// Every city pair
-for (let a = 0; a &lt; CITIES.length; a++)
-  for (let b = a+1; b &lt; CITIES.length; b++)
-    buildArc(CITIES[a], CITIES[b], CITIES.length*0.5 + (a*CITIES.length+b)*0.4);
 
 // ---- Interaction (horizontal drag only, no zoom) ----------------------------
 let isDown = false, lastX = 0, rotY = -1.9, velY = 0;
