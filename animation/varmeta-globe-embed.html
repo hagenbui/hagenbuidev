@@ -84,9 +84,8 @@ function frame() {
   camera.aspect = W / H;
 
   // Desired globe radius in px:
-  // Dynamically scale the globe so that the top hemisphere and its arcs (rising up to ~1.4 * radiusPx)
-  // fit within the container height H (leaving a top safety margin), and the width fits W.
-  const radiusPx = Math.max(10, Math.min(W / 2.2, (H - 15) / 1.4));
+  // Sized relative to height ("fit to height") to mimic Cloudflare's massive cropped globe.
+  const radiusPx = H * 1.55;
 
   // Camera distance so globe radius projects to radiusPx.
   // projectedRadiusPx = R / (tan(fovR/2) * camZ) * (W/2)
@@ -98,8 +97,10 @@ function frame() {
 
   const worldPerPx = camZ * Math.tan(fovR / 2) / (W / 2);
 
-  // Anchor equator (globe center) to the bottom edge of the container.
-  globe.position.y = -(H / 2) * worldPerPx;
+  // Position the globe so the top of the sphere is near the top of the container (with a small top padding).
+  const topPaddingPx = H * 0.05;
+  const globeCenterYPx = (H / 2) - topPaddingPx - radiusPx;
+  globe.position.y = globeCenterYPx * worldPerPx;
 }
 
 // ---- White core mask --------------------------------------------------------
