@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Varmeta Data flow Animation</title>
+  <style>
+    /* Styling System - White Mode (Light Mode Only) */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+    
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #ffffff; /* colorsBackgroundNeutralsBgPrimary */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .viewport-wrapper {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      max-width: 675px;
+      max-height: 323px;
+      aspect-ratio: 675 / 323;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .animation-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    
+    /* Static vector styles */
+    .flow-line {
+      fill: none;
+      stroke: #eaeaea; /* colorsBorderNeutralsBdSecondary */
+      stroke-width: 2;
+      stroke-linecap: round;
+    }
+    
+    .cyan-pipeline {
+      fill: none;
+      stroke: #d9f0ff; /* colorsBorderBrandsBdBrandTertiary */
+      stroke-width: 2;
+      stroke-linecap: round;
+    }
+    
+    /* Dynamic Surge Pulse Animation */
+    @keyframes surgeRun {
+      0% {
+        transform: translateX(319px);
+        opacity: 0;
+      }
+      15% {
+        opacity: 1;
+      }
+      85% {
+        opacity: 1;
+      }
+      100% {
+        transform: translateX(675px);
+        opacity: 0;
+      }
+    }
+    
+    .surge-pulse {
+      stroke: url(#surge-gradient);
+      stroke-width: 2;
+      stroke-linecap: round;
+      animation: surgeRun 0.9s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="viewport-wrapper">
+    <svg class="animation-svg" viewBox="0 0 675 323" xmlns="http://www.w3.org/2000/svg" id="svg-viewport">
+      <defs>
+        <!-- Blue Surge Gradient (symmetric solid blue fade) -->
+        <linearGradient id="surge-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#1078f3" stop-opacity="0" />
+          <stop offset="50%" stop-color="#1078f3" stop-opacity="1" />
+          <stop offset="100%" stop-color="#1078f3" stop-opacity="0" />
+        </linearGradient>
+        
+        <!-- Left Fade Overlay Gradient -->
+        <linearGradient id="left-fade" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#ffffff" stop-opacity="1" />
+          <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+        </linearGradient>
+        
+        <!-- Right Fade Overlay Gradient -->
+        <linearGradient id="right-fade" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#ffffff" stop-opacity="0" />
+          <stop offset="100%" stop-color="#ffffff" stop-opacity="1" />
+        </linearGradient>
+      </defs>
+      
+      <!-- Static Grey Input Channels -->
+      <!-- Path 1 (Top Curve) -->
+      <path id="path1" class="flow-line" d="M 0 57 H 204.275 C 368.41 57, 235.238 163, 408.119 163 H 411" />
+      
+      <!-- Path 2 (Upper Middle Curve) -->
+      <path id="path2" class="flow-line" d="M 0 110 H 204.275 C 368.41 110, 235.238 163, 408.119 163 H 411" />
+      
+      <!-- Path 3 (Middle Straight Line) -->
+      <path id="path3" class="flow-line" d="M 0 163 H 411" />
+      
+      <!-- Path 4 (Lower Middle Curve) -->
+      <path id="path4" class="flow-line" d="M 0 216 H 204.275 C 368.41 216, 235.238 163, 408.119 163 H 411" />
+      
+      <!-- Path 5 (Bottom Curve) -->
+      <path id="path5" class="flow-line" d="M 0 269 H 204.275 C 368.41 269, 235.238 163, 408.119 163 H 411" />
+      
+      <!-- Funnel output pipeline (Cyan Line) -->
+      <path id="path-cyan" class="cyan-pipeline" d="M 411 163 H 675" />
+      
+      <!-- Groups for dynamic elements -->
+      <g id="particles-group"></g>
+      <g id="surges-group"></g>
+      
+      <!-- Inline Scaling Masks (71px wide overlays matching Figma dimensions) -->
+      <rect x="0" y="0" width="71" height="323" fill="url(#left-fade)" pointer-events="none" />
+      <rect x="604" y="0" width="71" height="323" fill="url(#right-fade)" pointer-events="none" />
+    </svg>
+  </div>
+
+  <script>
+    const svgViewport = document.getElementById('svg-viewport');
+    const particlesGroup = document.getElementById('particles-group');
+    const surgesGroup = document.getElementById('surges-group');
+    
+    // Path Cache Elements & Length Cache
+    const paths = [
+      { element: document.getElementById('path1'), length: 0 },
+      { element: document.getElementById('path2'), length: 0 },
+      { element: document.getElementById('path3'), length: 0 },
+      { element: document.getElementById('path4'), length: 0 },
+      { element: document.getElementById('path5'), length: 0 }
+    ];
+    
+    // Initialize Path Lengths
+    paths.forEach(p => {
+      p.length = p.element.getTotalLength();
+    });
+
+    const currentBaseSpeed = 0.0028; // Elegant fluid speed
+    const spawnInterval = 1400; // Continuous staggered flow
+    
+    let particles = [];
+    const SHAPES = ['circle', 'square', 'diamond'];
+    
+    class Particle {
+      constructor(pathIndex, initialProgress = 0) {
+        this.pathIndex = pathIndex;
+        this.pathObj = paths[pathIndex];
+        this.progress = initialProgress;
+        
+        // Randomize speed slightly around base speed (0.9x to 1.1x) for organic offset
+        const speedRand = 0.9 + Math.random() * 0.2;
+        this.speed = currentBaseSpeed * speedRand;
+        
+        // Choose shape based on path to match illustration layout:
+        // Path 0: Circle, Path 1: Square, Path 2: Diamond, Path 3: Circle, Path 4: Square
+        const pathShapes = ['circle', 'square', 'diamond', 'circle', 'square'];
+        this.shapeType = pathShapes[pathIndex];
+        
+        this.size = 12; // Figma node size
+        this.domElement = this.createDOMElement();
+        particlesGroup.appendChild(this.domElement);
+      }
+      
+      createDOMElement() {
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        let shape;
+        
+        if (this.shapeType === 'circle') {
+          shape = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          shape.setAttribute('r', (this.size / 2).toString());
+        } else if (this.shapeType === 'square') {
+          shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          shape.setAttribute('x', (-this.size / 2).toString());
+          shape.setAttribute('y', (-this.size / 2).toString());
+          shape.setAttribute('width', this.size.toString());
+          shape.setAttribute('height', this.size.toString());
+          shape.setAttribute('rx', '2.5');
+        } else if (this.shapeType === 'diamond') {
+          shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          shape.setAttribute('x', (-this.size / 2).toString());
+          shape.setAttribute('y', (-this.size / 2).toString());
+          shape.setAttribute('width', this.size.toString());
+          shape.setAttribute('height', this.size.toString());
+          shape.setAttribute('rx', '2.5');
+          shape.setAttribute('transform', 'rotate(45)');
+        }
+        
+        // colorsIconNeutralsIconDisabled: rgba(77, 77, 77, 0.35)
+        shape.setAttribute('fill', 'rgba(77, 77, 77, 0.35)');
+        g.appendChild(shape);
+        return g;
+      }
+      
+      update() {
+        this.progress += this.speed;
+        
+        if (this.progress >= 1) {
+          this.destroy();
+          return false;
+        }
+        
+        const pt = this.pathObj.element.getPointAtLength(this.progress * this.pathObj.length);
+        
+        // Scale and Fade out to 0 in the last 8% of the path (nearing the cyan line)
+        let scale = 1;
+        let opacity = 1;
+        if (this.progress > 0.92) {
+          const fadeRatio = (1 - this.progress) / 0.08;
+          scale = fadeRatio;
+          opacity = fadeRatio;
+        }
+        
+        this.domElement.setAttribute('transform', `translate(${pt.x}, ${pt.y}) scale(${scale})`);
+        this.domElement.style.opacity = opacity.toString();
+        return true;
+      }
+      
+      destroy() {
+        if (this.domElement && this.domElement.parentNode) {
+          particlesGroup.removeChild(this.domElement);
+        }
+        
+        // Trigger structured surge down the cyan pipeline
+        triggerSurge();
+      }
+    }
+
+    // Dynamic surge line creation
+    function triggerSurge() {
+      const surgeLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      surgeLine.setAttribute('class', 'surge-pulse');
+      surgeLine.setAttribute('x1', '0');
+      surgeLine.setAttribute('y1', '163');
+      surgeLine.setAttribute('x2', '92');
+      surgeLine.setAttribute('y2', '163');
+      surgesGroup.appendChild(surgeLine);
+      
+      // Remove element after CSS animation completes
+      surgeLine.addEventListener('animationend', () => {
+        if (surgeLine.parentNode) {
+          surgesGroup.removeChild(surgeLine);
+        }
+      });
+    }
+
+    // Animation Loop
+    function animate() {
+      particles = particles.filter(p => {
+        return p.update();
+      });
+      requestAnimationFrame(animate);
+    }
+
+    // Spawn loop
+    function spawnParticle() {
+      // Pick random path (0-4)
+      const randomPathIdx = Math.floor(Math.random() * paths.length);
+      particles.push(new Particle(randomPathIdx, 0));
+    }
+
+    // Initialize initial state matching illustration offsets:
+    // Path 0: circle at 48% progress
+    // Path 1: square at 31% progress
+    // Path 2: diamond at 47% progress
+    // Path 3: circle at 32% progress
+    // Path 4: square at 18% progress
+    particles.push(new Particle(0, 0.48));
+    particles.push(new Particle(1, 0.31));
+    particles.push(new Particle(2, 0.47));
+    particles.push(new Particle(3, 0.32));
+    particles.push(new Particle(4, 0.18));
+
+    // Continuous generation
+    setInterval(spawnParticle, spawnInterval);
+    
+    // Start Animation Loop
+    animate();
+  </script>
+</body>
+</html>
