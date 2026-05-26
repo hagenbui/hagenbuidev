@@ -1,10 +1,34 @@
 <!DOCTYPE html>
-<html><head><meta charset="UTF-8"><style>
-* { margin:0; padding:0; box-sizing:border-box; }
-html,body { width:100%; height:100%; overflow:hidden; }
-iframe { display:block; width:100%; height:100%; border:none; background:transparent; }
-</style></head><body>
-<iframe srcdoc="&lt;!DOCTYPE html&gt;
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    iframe {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: transparent;
+    }
+  </style>
+</head>
+
+<body>
+  <iframe srcdoc="&lt;!DOCTYPE html&gt;
 &lt;html lang=&quot;en&quot;&gt;
 &lt;head&gt;
 &lt;meta charset=&quot;UTF-8&quot;&gt;
@@ -53,7 +77,7 @@ const FOV   = 38;
 const fovR  = FOV * Math.PI / 180;
 
 // Camera always on +Z, globe group moves in world space
-const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 2000);
+const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 50000);
 scene.add(camera);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -83,190 +107,81 @@ function frame() {
   renderer.setSize(W, H, false);
   camera.aspect = W / H;
 
-  // Desired globe radius in px:
   // Sized relative to height ("fit to height") to mimic Cloudflare's massive cropped globe.
   const radiusPx = H * 1.55;
 
-  // Camera distance so globe radius projects to radiusPx.
-  // projectedRadiusPx = R / (tan(fovR/2) * camZ) * (W/2)
-  // =&gt; camZ = R * (W/2) / (tan(fovR/2) * radiusPx)
-  camZ = R * (W / 2) / (Math.tan(fovR / 2) * radiusPx);
+  // Camera distance so globe radius projects to radiusPx vertically.
+  // projectedRadiusPx = R / (tan(fovR/2) * camZ) * (H/2)
+  // =&gt; camZ = R * (H/2) / (tan(fovR/2) * radiusPx)
+  camZ = R * (H / 2) / (Math.tan(fovR / 2) * radiusPx);
   camera.position.set(0, 0, camZ);
   camera.lookAt(0, 0, 0);
   camera.updateProjectionMatrix();
 
-  const worldPerPx = camZ * Math.tan(fovR / 2) / (W / 2);
+  const worldPerPx = camZ * Math.tan(fovR / 2) / (H / 2);
 
   // Position the globe so the top of the sphere is near the top of the container (with a small top padding).
   const topPaddingPx = H * 0.05;
   const globeCenterYPx = (H / 2) - topPaddingPx - radiusPx;
   globe.position.y = globeCenterYPx * worldPerPx;
-}
+} // ---- White core mask
+    -------------------------------------------------------- globe.add(new THREE.Mesh( new THREE.SphereGeometry(R *
+    0.97, 64, 64), new THREE.MeshBasicMaterial({ color: C.mask, transparent: true, opacity: 0.82, depthWrite: true })
+    )); // ---- Graticule -------------------------------------------------------------- function addLine(pts, opacity,
+    color) { const m=new THREE.LineBasicMaterial({ color: color || C.grid, transparent: true, opacity }); globe.add(new
+    THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), m)); } const gR=R * 1.001; for (let lon=-180; lon &lt;
+    180; lon +=20) { const pts=[]; for (let lat=-90; lat &lt;=90; lat +=3) { const phi=(90 - lat) * Math.PI / 180,
+    th=(lon + 180) * Math.PI / 180; pts.push(new THREE.Vector3(-gR*Math.sin(phi)*Math.cos(th), gR*Math.cos(phi),
+    gR*Math.sin(phi)*Math.sin(th))); } addLine(pts, 0.75); } for (let lat=-80; lat &lt;=80; lat +=20) { const rad=gR *
+    Math.cos(lat*Math.PI/180), y=gR * Math.sin(lat*Math.PI/180); const pts=[]; for (let i=0; i &lt;=96; i++) { const
+    a=i/96*Math.PI*2; pts.push(new THREE.Vector3(Math.cos(a)*rad, y, Math.sin(a)*rad)); } addLine(pts, lat===0 ? 0.9 :
+    0.75); } // ---- Land dots -------------------------------------------------------------- const pos=[]; for (let
+    i=0; i &lt; LAND.length; i +=3) pos.push(LAND[i]*R, LAND[i+1]*R, LAND[i+2]*R); const dGeo=new
+    THREE.BufferGeometry(); dGeo.setAttribute(&#x27;position&#x27;, new THREE.Float32BufferAttribute(pos, 3));
+    globe.add(new THREE.Points(dGeo, new THREE.ShaderMaterial({ transparent: true, depthWrite: true, uniforms: { uColor:
+    { value: new THREE.Color(C.dot) }, uSize: { value: 3.0 * Math.min(window.devicePixelRatio, 2) } }, vertexShader:
+    `uniform float uSize; varying float vE; void main() { vec3 n=normalize(mat3(modelMatrix) * normalize(position));
+    vE=dot(n, vec3(0,0,1)); gl_Position=projectionMatrix * modelViewMatrix * vec4(position,1); gl_PointSize=uSize; }`,
+    fragmentShader: `uniform vec3 uColor; varying float vE; void main() { if (vE &lt; 0.02) discard; vec2
+    c=gl_PointCoord - .5; if (dot(c,c) &gt; .25) discard; float rim=smoothstep(0.95, 0.25, vE);
+    gl_FragColor=vec4(uColor, mix(0.20, 1.0, rim)); }` }))); // ---- Helpers
+    ---------------------------------------------------------------- function ll2v(lat, lon, r) { const
+    phi=(90-lat)*Math.PI/180, th=(lon+180)*Math.PI/180; return new THREE.Vector3(-r*Math.sin(phi)*Math.cos(th),
+    r*Math.cos(phi), r*Math.sin(phi)*Math.sin(th)); } const HUB={ lat: 21.03, lon: 105.85 }; const CITIES=[ { lat: 1.28,
+    lon: 103.85 }, { lat: 13.76, lon: 100.50 }, { lat: 47.37, lon: 8.54 }, { lat: 37.77, lon:-122.42 }, { lat: 41.03,
+    lon: -73.71 }, ]; // ---- Markers ---------------------------------------------------------------- function
+    addMarker(lat, lon, isHub) { const p=ll2v(lat, lon, R * 1.004); const geo=new THREE.BufferGeometry();
+    geo.setAttribute(&#x27;position&#x27;, new THREE.Float32BufferAttribute([p.x, p.y, p.z], 3)); const mat=new
+    THREE.PointsMaterial({ size: isHub ? 7 : 5, color: isHub ? C.hub : C.dest, transparent: true, opacity: isHub ? 1 :
+    0.9, depthWrite: false, sizeAttenuation: true }); const pt=new THREE.Points(geo, mat); globe.add(pt); return pt; }
+    const hubMarker=addMarker(HUB.lat, HUB.lon, true); CITIES.forEach(c=&gt; addMarker(c.lat, c.lon, false)); // ----
+    Arcs ------------------------------------------------------------------- const arcData=[]; function buildArc(fromLL,
+    toLL, delay) { const s=ll2v(fromLL.lat, fromLL.lon, R); const e=ll2v(toLL.lat, toLL.lon, R); const
+    dist=s.distanceTo(e); // Calculate mid-point normal (direction straight up from the middle of the path) const
+    midNormal=s.clone().add(e).normalize(); // Lift factor based on distance const lift=dist * 0.45; // cp1 and cp2
+    extend outward along start/end normals and are pulled towards midNormal const cp1=s.clone().multiplyScalar(1 + lift
+    / R * 0.5).addScaledVector(midNormal, lift * 0.5); const cp2=e.clone().multiplyScalar(1 + lift / R *
+    0.5).addScaledVector(midNormal, lift * 0.5); const pts=new THREE.CubicBezierCurve3(s, cp1, cp2, e).getPoints(120);
+    globe.add(new THREE.Line( new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color:
+    C.arcBase, transparent: true, opacity: 0.85 }) )); const hlGeo=new THREE.BufferGeometry().setFromPoints(pts); const
+    hlMat=new THREE.LineBasicMaterial({ color: C.arcHighlight, transparent: true, opacity: 0 }); const hlLine=new
+    THREE.Line(hlGeo, hlMat); hlLine.geometry.setDrawRange(0, 0); globe.add(hlLine); arcData.push({ hlLine, hlMat,
+    total: 121, life: -delay, dur: 2.8, gap: 1.4, segLen: 22 }); } // Hub to each city CITIES.forEach((c, i)=&gt;
+    buildArc(HUB, c, i * 0.5)); // ---- Interaction (horizontal drag only, no zoom) ---------------------------- let
+    isDown=false, lastX=0, rotY=-1.9, velY=0; const cv=renderer.domElement; cv.addEventListener(&#x27;pointerdown&#x27;,
+    e=&gt; { isDown=true; lastX=e.clientX; cv.setPointerCapture(e.pointerId); });
+    cv.addEventListener(&#x27;pointerup&#x27;, ()=&gt; isDown=false); cv.addEventListener(&#x27;pointermove&#x27;,
+    e=&gt; { if (!isDown) return; velY=(e.clientX - lastX) * 0.004; rotY +=velY; lastX=e.clientX; }); // ---- Animate
+    ---------------------------------------------------------------- const clock=new THREE.Clock(); (function animate()
+    { requestAnimationFrame(animate); const dt=Math.min(clock.getDelta(), 0.05); if (!isDown) { velY *=0.92; rotY +=velY
+    + 0.0004; } globe.rotation.y=rotY; globe.rotation.x=0.15; hubMarker.material.size=7 + Math.sin(clock.elapsedTime *
+    2.2) * 1.2; arcData.forEach(a=&gt; { a.life +=dt; if (a.life &lt; 0) { a.hlMat.opacity=0; return; } const t=a.life %
+    (a.dur + a.gap); if (t &lt; a.dur) { const p=t / a.dur; const head=Math.floor(p * a.total);
+    a.hlLine.geometry.setDrawRange(Math.max(0, head - a.segLen), Math.min(a.segLen, head)); const fade=p &lt; 0.12 ?
+    p/0.12 : p &gt; 0.88 ? (1-p)/0.12 : 1; a.hlMat.opacity=fade * 0.95; } else { a.hlMat.opacity=0;
+    a.hlLine.geometry.setDrawRange(0, 0); } }); renderer.render(scene, camera); }()); // ---- Responsive
+    ------------------------------------------------------------- frame(); new ResizeObserver(frame).observe(root);
+    &lt;/script&gt; &lt;/body&gt; &lt;/html&gt;" scrolling="no" allowtransparency="true" frameborder="0"></iframe>
+</body>
 
-// ---- White core mask --------------------------------------------------------
-globe.add(new THREE.Mesh(
-  new THREE.SphereGeometry(R * 0.97, 64, 64),
-  new THREE.MeshBasicMaterial({ color: C.mask, transparent: true, opacity: 0.82, depthWrite: true })
-));
-
-// ---- Graticule --------------------------------------------------------------
-function addLine(pts, opacity, color) {
-  const m = new THREE.LineBasicMaterial({ color: color || C.grid, transparent: true, opacity });
-  globe.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), m));
-}
-const gR = R * 1.001;
-for (let lon = -180; lon &lt; 180; lon += 20) {
-  const pts = [];
-  for (let lat = -90; lat &lt;= 90; lat += 3) {
-    const phi = (90 - lat) * Math.PI / 180, th = (lon + 180) * Math.PI / 180;
-    pts.push(new THREE.Vector3(-gR*Math.sin(phi)*Math.cos(th), gR*Math.cos(phi), gR*Math.sin(phi)*Math.sin(th)));
-  }
-  addLine(pts, 0.75);
-}
-for (let lat = -80; lat &lt;= 80; lat += 20) {
-  const rad = gR * Math.cos(lat*Math.PI/180), y = gR * Math.sin(lat*Math.PI/180);
-  const pts = [];
-  for (let i = 0; i &lt;= 96; i++) { const a = i/96*Math.PI*2; pts.push(new THREE.Vector3(Math.cos(a)*rad, y, Math.sin(a)*rad)); }
-  addLine(pts, lat === 0 ? 0.9 : 0.75);
-}
-
-// ---- Land dots --------------------------------------------------------------
-const pos = [];
-for (let i = 0; i &lt; LAND.length; i += 3) pos.push(LAND[i]*R, LAND[i+1]*R, LAND[i+2]*R);
-const dGeo = new THREE.BufferGeometry();
-dGeo.setAttribute(&#x27;position&#x27;, new THREE.Float32BufferAttribute(pos, 3));
-globe.add(new THREE.Points(dGeo, new THREE.ShaderMaterial({
-  transparent: true, depthWrite: true,
-  uniforms: { uColor: { value: new THREE.Color(C.dot) }, uSize: { value: 3.0 * Math.min(window.devicePixelRatio, 2) } },
-  vertexShader: `uniform float uSize; varying float vE;
-    void main() {
-      vec3 n = normalize(mat3(modelMatrix) * normalize(position));
-      vE = dot(n, vec3(0,0,1));
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1);
-      gl_PointSize = uSize;
-    }`,
-  fragmentShader: `uniform vec3 uColor; varying float vE;
-    void main() {
-      if (vE &lt; 0.02) discard;
-      vec2 c = gl_PointCoord - .5;
-      if (dot(c,c) &gt; .25) discard;
-      float rim = smoothstep(0.95, 0.25, vE);
-      gl_FragColor = vec4(uColor, mix(0.20, 1.0, rim));
-    }`
-})));
-
-// ---- Helpers ----------------------------------------------------------------
-function ll2v(lat, lon, r) {
-  const phi = (90-lat)*Math.PI/180, th = (lon+180)*Math.PI/180;
-  return new THREE.Vector3(-r*Math.sin(phi)*Math.cos(th), r*Math.cos(phi), r*Math.sin(phi)*Math.sin(th));
-}
-
-const HUB    = { lat: 21.03, lon: 105.85 };
-const CITIES = [
-  { lat:  1.28, lon: 103.85 },
-  { lat: 13.76, lon: 100.50 },
-  { lat: 47.37, lon:   8.54 },
-  { lat: 37.77, lon:-122.42 },
-  { lat: 41.03, lon: -73.71 },
-];
-
-// ---- Markers ----------------------------------------------------------------
-function addMarker(lat, lon, isHub) {
-  const p = ll2v(lat, lon, R * 1.004);
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute(&#x27;position&#x27;, new THREE.Float32BufferAttribute([p.x, p.y, p.z], 3));
-  const mat = new THREE.PointsMaterial({
-    size: isHub ? 7 : 5, color: isHub ? C.hub : C.dest,
-    transparent: true, opacity: isHub ? 1 : 0.9,
-    depthWrite: false, sizeAttenuation: true
-  });
-  const pt = new THREE.Points(geo, mat);
-  globe.add(pt);
-  return pt;
-}
-const hubMarker = addMarker(HUB.lat, HUB.lon, true);
-CITIES.forEach(c =&gt; addMarker(c.lat, c.lon, false));
-
-// ---- Arcs -------------------------------------------------------------------
-const arcData = [];
-
-function buildArc(fromLL, toLL, delay) {
-  const s = ll2v(fromLL.lat, fromLL.lon, R);
-  const e = ll2v(toLL.lat,   toLL.lon,   R);
-  const dist = s.distanceTo(e);
-  
-  // Calculate mid-point normal (direction straight up from the middle of the path)
-  const midNormal = s.clone().add(e).normalize();
-  
-  // Lift factor based on distance
-  const lift = dist * 0.45;
-  
-  // cp1 and cp2 extend outward along start/end normals and are pulled towards midNormal
-  const cp1 = s.clone().multiplyScalar(1 + lift / R * 0.5).addScaledVector(midNormal, lift * 0.5);
-  const cp2 = e.clone().multiplyScalar(1 + lift / R * 0.5).addScaledVector(midNormal, lift * 0.5);
-  
-  const pts = new THREE.CubicBezierCurve3(s, cp1, cp2, e).getPoints(120);
-  globe.add(new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints(pts),
-    new THREE.LineBasicMaterial({ color: C.arcBase, transparent: true, opacity: 0.85 })
-  ));
-  const hlGeo = new THREE.BufferGeometry().setFromPoints(pts);
-  const hlMat = new THREE.LineBasicMaterial({ color: C.arcHighlight, transparent: true, opacity: 0 });
-  const hlLine = new THREE.Line(hlGeo, hlMat);
-  hlLine.geometry.setDrawRange(0, 0);
-  globe.add(hlLine);
-  arcData.push({ hlLine, hlMat, total: 121, life: -delay, dur: 2.8, gap: 1.4, segLen: 22 });
-}
-
-// Hub to each city
-CITIES.forEach((c, i) =&gt; buildArc(HUB, c, i * 0.5));
-
-// ---- Interaction (horizontal drag only, no zoom) ----------------------------
-let isDown = false, lastX = 0, rotY = -1.9, velY = 0;
-const cv = renderer.domElement;
-cv.addEventListener(&#x27;pointerdown&#x27;, e =&gt; { isDown = true; lastX = e.clientX; cv.setPointerCapture(e.pointerId); });
-cv.addEventListener(&#x27;pointerup&#x27;,   () =&gt; isDown = false);
-cv.addEventListener(&#x27;pointermove&#x27;, e =&gt; {
-  if (!isDown) return;
-  velY = (e.clientX - lastX) * 0.004;
-  rotY += velY;
-  lastX = e.clientX;
-});
-
-// ---- Animate ----------------------------------------------------------------
-const clock = new THREE.Clock();
-(function animate() {
-  requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
-  if (!isDown) { velY *= 0.92; rotY += velY + 0.0004; }
-  globe.rotation.y = rotY;
-  globe.rotation.x = 0.15;
-
-  hubMarker.material.size = 7 + Math.sin(clock.elapsedTime * 2.2) * 1.2;
-
-  arcData.forEach(a =&gt; {
-    a.life += dt;
-    if (a.life &lt; 0) { a.hlMat.opacity = 0; return; }
-    const t = a.life % (a.dur + a.gap);
-    if (t &lt; a.dur) {
-      const p = t / a.dur;
-      const head = Math.floor(p * a.total);
-      a.hlLine.geometry.setDrawRange(Math.max(0, head - a.segLen), Math.min(a.segLen, head));
-      const fade = p &lt; 0.12 ? p/0.12 : p &gt; 0.88 ? (1-p)/0.12 : 1;
-      a.hlMat.opacity = fade * 0.95;
-    } else {
-      a.hlMat.opacity = 0;
-      a.hlLine.geometry.setDrawRange(0, 0);
-    }
-  });
-
-  renderer.render(scene, camera);
-}());
-
-// ---- Responsive -------------------------------------------------------------
-frame();
-new ResizeObserver(frame).observe(root);
-&lt;/script&gt;
-&lt;/body&gt;
-&lt;/html&gt;" scrolling="no" allowtransparency="true" frameborder="0"></iframe>
-</body></html>
+</html>
