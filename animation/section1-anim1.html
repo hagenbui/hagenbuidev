@@ -56,29 +56,9 @@
       stroke-linecap: round;
     }
     
-    /* Dynamic Surge Pulse Animation */
-    @keyframes surgeRun {
-      0% {
-        transform: translateX(319px);
-        opacity: 0;
-      }
-      15% {
-        opacity: 1;
-      }
-      85% {
-        opacity: 1;
-      }
-      100% {
-        transform: translateX(675px);
-        opacity: 0;
-      }
-    }
-    
+    /* Dynamic Surge Pulse style */
     .surge-pulse {
-      stroke: url(#surge-gradient);
-      stroke-width: 2;
-      stroke-linecap: round;
-      animation: surgeRun 0.9s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+      /* Managed in Javascript loop for 100% cross-browser reliability */
     }
   </style>
 </head>
@@ -129,6 +109,7 @@
       <!-- Groups for dynamic elements -->
       <g id="particles-group"></g>
       <g id="surges-group"></g>
+      <g id="bursts-group"></g>
       
       <!-- Inline Scaling Masks (71px wide overlays matching Figma dimensions) -->
       <rect x="0" y="0" width="71" height="323" fill="url(#left-fade)" pointer-events="none" />
@@ -137,9 +118,10 @@
   </div>
 
   <script>
-    const svgViewport = document.getElementById('svg-viewport');
-    const particlesGroup = document.getElementById('particles-group');
-    const surgesGroup = document.getElementById('surges-group');
+     const svgViewport = document.getElementById('svg-viewport');
+     const particlesGroup = document.getElementById('particles-group');
+     const surgesGroup = document.getElementById('surges-group');
+     const burstsGroup = document.getElementById('bursts-group');
     
     // Path Cache Elements & Length Cache
     const paths = [
@@ -240,34 +222,113 @@
           particlesGroup.removeChild(this.domElement);
         }
         
-        // Trigger structured surge down the cyan pipeline
-        triggerSurge();
+        // Trigger a conversion burst shockwave at the funnel
+        triggerBurst();
+        
+        // Pass the node's actual speed in pixels per frame to the surge
+        const pixelSpeed = this.speed * paths[2].length;
+        triggerSurge(pixelSpeed);
       }
     }
 
-    // Dynamic surge line creation
-    function triggerSurge() {
-      const surgeLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      surgeLine.setAttribute('class', 'surge-pulse');
-      surgeLine.setAttribute('x1', '0');
-      surgeLine.setAttribute('y1', '163');
-      surgeLine.setAttribute('x2', '92');
-      surgeLine.setAttribute('y2', '163');
-      surgesGroup.appendChild(surgeLine);
+    let surges = [];
+    let bursts = [];
+
+    // Dynamic surge rect creation
+    function triggerSurge(speed) {
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('width', '92');
+      rect.setAttribute('height', '2');
+      rect.setAttribute('y', '162'); // Centered on y=163
+      rect.setAttribute('fill', 'url(#surge-gradient)');
+      rect.style.opacity = '0';
+      surgesGroup.appendChild(rect);
       
-      // Remove element after CSS animation completes
-      surgeLine.addEventListener('animationend', () => {
-        if (surgeLine.parentNode) {
-          surgesGroup.removeChild(surgeLine);
-        }
+      surges.push({
+        domElement: rect,
+        x: 319,
+        speed: speed // matches node speed exactly
       });
     }
 
+    // Dynamic conversion burst creation
+    function triggerBurst() {
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      circle.setAttribute('cx', '411');
+      circle.setAttribute('cy', '163');
+      circle.setAttribute('r', '6');
+      circle.setAttribute('fill', 'none');
+      circle.setAttribute('stroke', '#1078f3');
+      circle.setAttribute('stroke-width', '2.5');
+      burstsGroup.appendChild(circle);
+      
+      bursts.push({
+        domElement: circle,
+        r: 6,
+        maxR: 22,
+        opacity: 1
+      });
+    }
+
+    let lastSpawnTime = 0;
+
     // Animation Loop
-    function animate() {
+    function animate(timestamp) {
+      if (!lastSpawnTime) lastSpawnTime = timestamp;
+
+      // Update particles
       particles = particles.filter(p => {
         return p.update();
       });
+      
+      // Update surges
+      surges = surges.filter(s => {
+        s.x += s.speed;
+        
+        if (s.x >= 675) {
+          if (s.domElement && s.domElement.parentNode) {
+            surgesGroup.removeChild(s.domElement);
+          }
+          return false;
+        }
+        
+        // Fade in at start (319 to 350) and fade out at end (620 to 675)
+        let opacity = 1;
+        if (s.x < 350) {
+          opacity = (s.x - 319) / 31;
+        } else if (s.x > 620) {
+          opacity = (675 - s.x) / 55;
+        }
+        
+        s.domElement.setAttribute('transform', `translate(${s.x}, 0)`);
+        s.domElement.style.opacity = opacity.toString();
+        return true;
+      });
+
+      // Update bursts
+      bursts = bursts.filter(b => {
+        b.r += 0.45; // grow radius
+        b.opacity = 1 - (b.r - 6) / (b.maxR - 6);
+        
+        if (b.r >= b.maxR) {
+          if (b.domElement && b.domElement.parentNode) {
+            burstsGroup.removeChild(b.domElement);
+          }
+          return false;
+        }
+        
+        b.domElement.setAttribute('r', b.r.toString());
+        b.domElement.style.opacity = b.opacity.toString();
+        b.domElement.setAttribute('stroke-width', (2.5 * b.opacity).toString());
+        return true;
+      });
+
+      // Handle spawning inside animation loop to prevent background backlog
+      if (timestamp - lastSpawnTime >= spawnInterval) {
+        spawnParticle();
+        lastSpawnTime = timestamp;
+      }
+      
       requestAnimationFrame(animate);
     }
 
@@ -290,11 +351,8 @@
     particles.push(new Particle(3, 0.32));
     particles.push(new Particle(4, 0.18));
 
-    // Continuous generation
-    setInterval(spawnParticle, spawnInterval);
-    
-    // Start Animation Loop
-    animate();
+    // Start Animation Loop (first frame receives the timestamp)
+    requestAnimationFrame(animate);
   </script>
 </body>
 </html>
