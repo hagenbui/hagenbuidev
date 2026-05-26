@@ -85,17 +85,6 @@
     align-items: center;
     gap: 16px;
   }
-  .globe-tooltip::after {
-    content: '';
-    position: absolute;
-    bottom: -5px;
-    left: 50%;
-    transform: translateX(-50%);
-    border-width: 5px 5px 0;
-    border-style: solid;
-    border-color: var(--colors-alpha-alpha-white-50) transparent transparent;
-    pointer-events: none;
-  }
   .tt-icon-container {
     display: flex;
     align-items: center;
@@ -332,10 +321,18 @@ const tooltips = LOCATIONS.map(loc =&gt; {
   const el = document.createElement('div');
   el.className = 'globe-tooltip';
   el.innerHTML = `
-    <div class='loc-name'>${loc.name}</div>
-    <div class='loc-time'>
-      <span class='loc-time-dot'></span>
-      <span class='time-text'></span>
+    <div class='tt-corner tt-tl'></div>
+    <div class='tt-corner tt-tr'></div>
+    <div class='tt-corner tt-bl'></div>
+    <div class='tt-corner tt-br'></div>
+    <div class='tt-icon-container'>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M10.667 14v-1.333A2.667 2.667 0 0 0 8 10H3.333a2.667 2.667 0 0 0-2.666 2.667V14M12 7.333a2 2 0 0 0 0-4M14.667 14v-1.333a2 2 0 0 0-1.334-1.886M5.667 7.333a2.667 2.667 0 1 0 0-5.333 2.667 2.667 0 0 0 0 5.333Z" stroke="currentColor" stroke-width="1.333" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class='tt-text-container'>
+      <div class='loc-name'>${loc.name}</div>
+      <div class='loc-time'><span class='time-text'></span></div>
     </div>
   `;
   tooltipContainer.appendChild(el);
@@ -345,12 +342,9 @@ const tooltips = LOCATIONS.map(loc =&gt; {
 function getLocalTime(offsetHours) {
   const utc = new Date().getTime() + new Date().getTimezoneOffset() * 60000;
   const local = new Date(utc + 3600000 * offsetHours);
-  let h = local.getHours();
+  const h = local.getHours();
   const m = String(local.getMinutes()).padStart(2, '0');
-  const ampm = h &gt;= 12 ? 'PM' : 'AM';
-  h = h % 12;
-  h = h ? h : 12;
-  return `${h}:${m} ${ampm}`;
+  return `${h}:${m}`;
 }
 
 // ---- Arcs -------------------------------------------------------------------
