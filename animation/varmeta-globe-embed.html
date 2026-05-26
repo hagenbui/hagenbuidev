@@ -53,14 +53,6 @@
   }
   canvas:active { cursor: grabbing; }
   #tooltip-container {
-    /* Token variables from figma design */
-    --colors-alpha-alpha-white-50: rgba(255, 255, 255, 0.5);
-    --colors-border-brands-bd-brand-secondary: #bce5ff;
-    --colors-border-brands-bd-brand: #1078f3;
-    --colors-text-brands-text-brand-primary: #1078f3;
-    --colors-text-neutrals-text-secondary: #494949;
-    --backdrop-blur: 10px;
-
     position: absolute;
     top: 0; left: 0;
     width: 100%; height: 100%;
@@ -69,87 +61,85 @@
     z-index: 10;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   }
-  .globe-tooltip {
+  .globe-marker {
     position: absolute;
-    transform: translate(-50%, -100%);
-    margin-top: -12px;
-    background: var(--colors-alpha-alpha-white-50);
-    backdrop-filter: blur(var(--backdrop-blur));
-    -webkit-backdrop-filter: blur(var(--backdrop-blur));
-    border: 1px solid var(--colors-border-brands-bd-brand-secondary);
-    padding: 8px 16px;
+    pointer-events: none;
     opacity: 0;
     transition: opacity 0.3s ease;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  }
+  .globe-marker.state-1 { transform: translate(-50%, -50%); }
+  .globe-marker.state-2 { transform: translate(-50%, -50%); }
+  .globe-marker.state-3 { transform: translate(-50%, calc(-100% - 8px)); }
+  .marker-card {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 16px;
   }
-  .tt-icon-container {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--colors-text-brands-text-brand-primary);
-    flex-shrink: 0;
-    width: 16px;
-    height: 16px;
+  .globe-marker.state-1 .marker-card {
+    width: 16px; height: 16px; padding: 0; gap: 0;
+    background: none; border: none;
+    backdrop-filter: none; -webkit-backdrop-filter: none;
   }
-  .tt-text-container {
-    display: flex;
-    flex-direction: column;
-    align-items: start;
-    white-space: nowrap;
+  .globe-marker.state-2 .marker-card {
+    width: 28px; height: 28px; padding: 4px; gap: 0;
+    background: rgba(255,255,255,0.5);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid #bce5ff;
   }
-  .globe-tooltip .loc-name {
-    font-size: 16px;
-    font-weight: 600;
-    line-height: 24px;
-    color: var(--colors-text-brands-text-brand-primary);
+  .globe-marker.state-3 .marker-card {
+    padding: 8px 16px; gap: 12px;
+    background: rgba(255,255,255,0.5);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid #bce5ff;
   }
-  .globe-tooltip .loc-time {
-    font-size: 14px;
-    font-weight: 400;
-    line-height: 20px;
-    color: var(--colors-text-neutrals-text-secondary);
-  }
-  
-  /* Corner Brackets styling */
+  .globe-marker.varmeta.state-2 .marker-card,
+  .globe-marker.varmeta.state-3 .marker-card { background: rgba(16,120,243,0.5); }
   .tt-corner {
-    position: absolute;
-    width: 8px;
-    height: 8px;
-    border-color: var(--colors-border-brands-bd-brand);
-    border-style: solid;
-    border-width: 0;
+    position: absolute; width: 8px; height: 8px;
+    border-color: #1078f3; border-style: solid; border-width: 0;
   }
-  .tt-tl {
-    top: -1px;
-    left: -1px;
-    border-top-width: 1px;
-    border-left-width: 1px;
+  .tt-tl { top: -1px; left: -1px; border-top-width: 1px; border-left-width: 1px; }
+  .tt-tr { top: -1px; right: -1px; border-top-width: 1px; border-right-width: 1px; }
+  .tt-bl { bottom: -1px; left: -1px; border-bottom-width: 1px; border-left-width: 1px; }
+  .tt-br { bottom: -1px; right: -1px; border-bottom-width: 1px; border-right-width: 1px; }
+  .globe-marker.state-1 .tt-corner { display: none; }
+  .marker-icon {
+    position: relative; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
   }
-  .tt-tr {
-    top: -1px;
-    right: -1px;
-    border-top-width: 1px;
-    border-right-width: 1px;
+  .globe-marker.state-1 .marker-icon { width: 16px; height: 16px; }
+  .globe-marker.state-2 .marker-icon { width: 20px; height: 20px; }
+  .globe-marker.state-3 .marker-icon { width: 24px; height: 24px; }
+  .globe-marker.varmeta.state-1 .marker-icon { width: 16px; height: 12px; }
+  .globe-marker.varmeta.state-2 .marker-icon { width: 16px; height: 12px; }
+  .globe-marker.varmeta.state-3 .marker-icon { width: 21px; height: 16px; }
+  .diamond-inner {
+    position: absolute; background: #1078f3; transform: rotate(45deg);
   }
-  .tt-bl {
-    bottom: -1px;
-    left: -1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
+  .globe-marker.state-1 .diamond-inner { width: 5.5px; height: 5.5px; }
+  .globe-marker.state-2 .diamond-inner { width: 5.5px; height: 5.5px; }
+  .globe-marker.state-3 .diamond-inner { width: 7.75px; height: 7.75px; }
+  .diamond-outer {
+    position: absolute; border: 1.5px solid #1078f3; transform: rotate(45deg);
   }
-  .tt-br {
-    bottom: -1px;
-    right: -1px;
-    border-bottom-width: 1px;
-    border-right-width: 1px;
+  .globe-marker.state-1 .diamond-outer { width: 11px; height: 11px; }
+  .globe-marker.state-2 .diamond-outer { width: 14px; height: 14px; }
+  .globe-marker.state-3 .diamond-outer { width: 17px; height: 17px; }
+  .varmeta-logo { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .marker-text {
+    display: flex; flex-direction: column; align-items: start;
+    white-space: nowrap; overflow: hidden;
+    max-width: 0; opacity: 0;
+    transition: max-width 0.3s ease, opacity 0.2s ease;
   }
-  @keyframes pulse-dot {
-    0%, 100% { opacity: 0.4; transform: scale(0.85); }
-    50% { opacity: 1; transform: scale(1.2); }
-  }
+  .globe-marker.state-3 .marker-text { max-width: 200px; opacity: 1; }
+  .loc-name { font-size: 20px; font-weight: 600; line-height: 28px; color: #1078f3; }
+  .globe-marker.varmeta .loc-name { color: #eef8ff; }
+  .loc-time { font-size: 14px; font-weight: 400; line-height: 20px; color: #494949; }
+  .globe-marker.varmeta .loc-time { color: #d9f0ff; }
+  .loc-time-tz { color: #797979; }
+  .globe-marker.varmeta .loc-time-tz { color: #8ed5ff; }
 &lt;/style&gt;
 &lt;/head&gt;
 &lt;body&gt;
@@ -297,7 +287,7 @@ function addMarker(lat, lon, isHub) {
   geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
   const mat = new THREE.PointsMaterial({
     size: isHub ? 7 : 5, color: isHub ? C.hub : C.dest,
-    transparent: true, opacity: isHub ? 1 : 0.9,
+    transparent: true, opacity: 0,
     depthWrite: false, sizeAttenuation: true
   });
   const pt = new THREE.Points(geo, mat);
@@ -315,28 +305,21 @@ const markers = LOCATIONS.map(loc =&gt; {
 // Reference to hub marker for pulsating size animation
 const hubMarker = markers.find(m =&gt; m.loc.isHub).pt;
 
-// ---- HTML Tooltips ----------------------------------------------------------
+// ---- HTML Markers -----------------------------------------------------------
+const VARMETA_LOGO_SM = 'https://www.figma.com/api/mcp/asset/32bb221e-5057-4c70-9c4b-4450b8a5c76e';
+const VARMETA_LOGO_LG = 'https://www.figma.com/api/mcp/asset/91b13c93-24d0-4931-ad5c-92de3b1689e6';
 const tooltipContainer = document.getElementById('tooltip-container');
 const tooltips = LOCATIONS.map(loc =&gt; {
   const el = document.createElement('div');
-  el.className = 'globe-tooltip';
-  el.innerHTML = `
-    <div class='tt-corner tt-tl'></div>
-    <div class='tt-corner tt-tr'></div>
-    <div class='tt-corner tt-bl'></div>
-    <div class='tt-corner tt-br'></div>
-    <div class='tt-icon-container'>
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M10.667 14v-1.333A2.667 2.667 0 0 0 8 10H3.333a2.667 2.667 0 0 0-2.666 2.667V14M12 7.333a2 2 0 0 0 0-4M14.667 14v-1.333a2 2 0 0 0-1.334-1.886M5.667 7.333a2.667 2.667 0 1 0 0-5.333 2.667 2.667 0 0 0 0 5.333Z" stroke="currentColor" stroke-width="1.333" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </div>
-    <div class='tt-text-container'>
-      <div class='loc-name'>${loc.name}</div>
-      <div class='loc-time'><span class='time-text'></span></div>
-    </div>
-  `;
+  el.className = 'globe-marker state-1' + (loc.isHub ? ' varmeta' : '');
+  const iconHTML = loc.isHub
+    ? '<img class=\'varmeta-logo\' src=\'' + VARMETA_LOGO_LG + '\' alt=\'\'>'
+    : '<div class=\'diamond-inner\'></div><div class=\'diamond-outer\'></div>';
+  el.innerHTML = `<div class='marker-card'><div class='tt-corner tt-tl'></div><div class='tt-corner tt-tr'></div><div class='tt-corner tt-bl'></div><div class='tt-corner tt-br'></div><div class='marker-icon'>${iconHTML}</div><div class='marker-text'><div class='loc-name'>${loc.name}</div><div class='loc-time'><span class='time-val'></span><span class='loc-time-tz'></span></div></div></div>`;
   tooltipContainer.appendChild(el);
-  return { loc, el };
+  const timeVal = el.querySelector('.time-val');
+  const timeTz = el.querySelector('.loc-time-tz');
+  return { loc, el, currentState: 1, visibleSince: 0, timeVal, timeTz };
 });
 
 function getLocalTime(offsetHours) {
@@ -356,7 +339,7 @@ function buildArc(fromLL, toLL, delay) {
   const dist = s.distanceTo(e);
   
   const midNormal = s.clone().add(e).normalize();
-  const lift = dist * 0.45;
+  const lift = dist * 0.7;
   const cp1 = s.clone().multiplyScalar(1 + lift / R * 0.5).addScaledVector(midNormal, lift * 0.5);
   const cp2 = e.clone().multiplyScalar(1 + lift / R * 0.5).addScaledVector(midNormal, lift * 0.5);
   
@@ -401,104 +384,69 @@ const tempV = new THREE.Vector3();
   globe.rotation.y = rotY;
   globe.rotation.x = 0.15;
 
-  hubMarker.material.size = 7 + Math.sin(clock.elapsedTime * 2.2) * 1.2;
+  // Track and update markers
+  const hubPos = { x: 0, y: 0, visible: false };
+  const now = performance.now();
 
-  // Track and update tooltips and marker dot visibilities
-  const activeTooltips = [];
   markers.forEach(({ loc, pt }) => {
     pt.getWorldPosition(tempV);
-    
-    // Normal direction of the point from the globe center
     const toPt = tempV.clone().sub(globe.position).normalize();
-    // Direction from the point to the camera
     const toCam = camera.position.clone().sub(tempV).normalize();
-    
-    // Check if the point is on the front hemisphere facing the camera
-    const dot = toPt.dot(toCam);
-    const isVisible = dot > 0.05;
-    
-    const tooltip = tooltips.find(t => t.loc === loc);
-    if (tooltip) {
+    const isVisible = toPt.dot(toCam) > 0.05;
+
+    const marker = tooltips.find(t => t.loc === loc);
+    if (!marker) return;
+
+    const proj = tempV.clone().project(camera);
+    const sx = (proj.x * 0.5 + 0.5) * W;
+    const sy = (proj.y * -0.5 + 0.5) * H;
+
+    if (loc.isHub) {
+      hubPos.x = sx; hubPos.y = sy; hubPos.visible = isVisible;
+      marker.el.style.left = sx + 'px';
+      marker.el.style.top = sy + 'px';
+      marker.el.style.opacity = '1';
       if (isVisible) {
-        tempV.project(camera);
-        const x = (tempV.x * 0.5 + 0.5) * W;
-        const y = (tempV.y * -0.5 + 0.5) * H;
-        
-        const ttHeight = tooltip.el.offsetHeight || 36;
-        const ttWidth = tooltip.el.offsetWidth || 120;
-        const padding = 10;
-        const minY = padding + 12 + ttHeight;
-        const maxY = H - padding + 12;
-        const clampedY = Math.max(minY, Math.min(y, maxY));
-        
-        activeTooltips.push({
-          el: tooltip.el,
-          x: x,
-          y: clampedY,
-          w: ttWidth,
-          h: ttHeight,
-          minY: minY,
-          maxY: maxY,
-          loc: loc
-        });
-      } else {
-        tooltip.el.style.opacity = '0';
-      }
-    }
-    
-    // Fade the marker dot smoothly based on visibility
-    const targetOpacity = isVisible ? (loc.isHub ? 1.0 : 0.9) : 0.05;
-    pt.material.opacity += (targetOpacity - pt.material.opacity) * 0.15;
-  });
-
-  // Resolve overlaps vertically in screen space
-  for (let iter = 0; iter < 8; iter++) {
-    for (let i = 0; i < activeTooltips.length; i++) {
-      for (let j = i + 1; j < activeTooltips.length; j++) {
-        const a = activeTooltips[i];
-        const b = activeTooltips[j];
-        
-        // Check horizontal overlap with a 6px gap margin
-        const xOverlap = Math.abs(a.x - b.x) < ((a.w + b.w) / 2 + 6);
-        if (!xOverlap) continue;
-        
-        // Check vertical overlap of bodies (bodies are y - 12 - h to y - 12)
-        const aBottom = a.y - 12;
-        const aTop = aBottom - a.h;
-        const bBottom = b.y - 12;
-        const bTop = bBottom - b.h;
-        
-        const yOverlap = (aTop - 6 < bBottom) && (aBottom + 6 > bTop);
-        if (!yOverlap) continue;
-        
-        // Resolve overlap
-        const overlap = Math.min(aBottom, bBottom) - Math.max(aTop, bTop) + 6;
-        
-        // Shift the one higher up further up, lower one further down
-        if (a.y < b.y) {
-          a.y -= overlap * 0.5;
-          b.y += overlap * 0.5;
-        } else {
-          b.y -= overlap * 0.5;
-          a.y += overlap * 0.5;
+        if (!marker.visibleSince) marker.visibleSince = now;
+        const target = (now - marker.visibleSince) > 200 ? 3 : 2;
+        if (marker.currentState !== target) {
+          marker.currentState = target;
+          marker.el.className = 'globe-marker state-' + target + ' varmeta';
         }
-        
-        // Re-clamp within safe bounds
-        a.y = Math.max(a.minY, Math.min(a.y, a.maxY));
-        b.y = Math.max(b.minY, Math.min(b.y, b.maxY));
+        if (marker.timeVal) marker.timeVal.textContent = getLocalTime(loc.offset);
+        if (marker.timeTz) marker.timeTz.textContent = ' ' + loc.tzName;
+      } else {
+        marker.visibleSince = 0;
+        if (marker.currentState !== 1) {
+          marker.currentState = 1;
+          marker.el.className = 'globe-marker state-1 varmeta';
+        }
       }
-    }
-  }
-
-  // Apply positions and content updates
-  activeTooltips.forEach(t => {
-    t.el.style.left = `${t.x}px`;
-    t.el.style.top = `${t.y}px`;
-    t.el.style.opacity = '1';
-    
-    const timeText = t.el.querySelector('.time-text');
-    if (timeText) {
-      timeText.textContent = `${getLocalTime(t.loc.offset)} ${t.loc.tzName}`;
+    } else {
+      if (isVisible) {
+        const dx = sx - hubPos.x, dy = sy - hubPos.y;
+        if (hubPos.visible && Math.sqrt(dx * dx + dy * dy) < 100) {
+          marker.el.style.opacity = '0';
+          marker.visibleSince = 0;
+          if (marker.currentState !== 1) { marker.currentState = 1; marker.el.className = 'globe-marker state-1'; }
+          return;
+        }
+        marker.el.style.left = sx + 'px';
+        marker.el.style.top = sy + 'px';
+        marker.el.style.opacity = '1';
+        if (!marker.visibleSince) marker.visibleSince = now;
+        const target = (now - marker.visibleSince) > 200 ? 3 : 2;
+        if (marker.currentState !== target) {
+          marker.currentState = target;
+          marker.el.className = 'globe-marker state-' + target;
+        }
+        if (marker.timeVal) marker.timeVal.textContent = getLocalTime(loc.offset);
+        if (marker.timeTz) marker.timeTz.textContent = ' ' + loc.tzName;
+      } else {
+        marker.el.style.opacity = '0';
+        marker.visibleSince = 0;
+        if (marker.currentState !== 1) { marker.currentState = 1; marker.el.className = 'globe-marker state-1'; }
+      }
     }
   });
 
