@@ -78,6 +78,9 @@
   .varmeta-dot-logo { display: block; width: 16.072px; height: 12px; }
   .marker-dot .diamond-inner { width: 6px; height: 6px; position: absolute; background: #1078f3; transform: rotate(45deg); }
   .marker-dot .diamond-outer { width: 12px; height: 12px; position: absolute; border: 1px solid #1078f3; transform: rotate(45deg); }
+  /* Varmeta hub dot — 25% larger */
+  .globe-marker.varmeta .marker-dot { width: 20px; height: 20px; }
+  .globe-marker.varmeta .varmeta-dot-logo { width: 20.09px; height: 15px; }
   /* Card: floats above dot with 8px gap; hidden until state-2 */
   .marker-card {
     position: absolute;
@@ -212,7 +215,7 @@ scene.add(globe);
 //     DOWN so its top still sits just below the top edge (never top-cropped).
 //   - Top padding keeps a small gap above the globe.
 const FILL_W        = 1.6;
-const PADDING_TOP   = 0;
+const PADDING_TOP   = 24; // px of breathing room at top edge for arcs
 const BOTTOM_REVEAL = 60; // px below equator to keep visible
 
 let W, H, camZ;
@@ -224,9 +227,8 @@ function frame() {
   renderer.setSize(W, H, false);
   camera.aspect = W / H;
 
-  // Cap radius so arcs fit in the reduced vertical space above the equator.
-  // Available height above equator = H - BOTTOM_REVEAL; arcs extend ~1.165× radius.
-  const radiusPx = Math.min((FILL_W * W) / 2, (H - BOTTOM_REVEAL - 24) / 1.165);
+  // Arc peaks extend ~1.165× the radius above globe center; PADDING_TOP reserves space.
+  const radiusPx = Math.min((FILL_W * W) / 2, (H - BOTTOM_REVEAL - PADDING_TOP) / 1.165);
 
   camZ = R * (H / 2) / (Math.tan(fovR / 2) * radiusPx);
   camera.position.set(0, 0, camZ);
@@ -379,7 +381,7 @@ function buildArc(fromLL, toLL, delay) {
   const dist = s.distanceTo(e);
   
   const midNormal = s.clone().add(e).normalize();
-  const lift = dist * 0.7;
+  const lift = dist * 0.4;
   const cp1 = s.clone().multiplyScalar(1 + lift / R * 0.5).addScaledVector(midNormal, lift * 0.5);
   const cp2 = e.clone().multiplyScalar(1 + lift / R * 0.5).addScaledVector(midNormal, lift * 0.5);
   
@@ -402,7 +404,7 @@ const destLocs = LOCATIONS.filter(l =&gt; !l.isHub);
 destLocs.forEach((c, i) =&gt; buildArc(hubLoc, c, i * 0.5));
 
 // ---- Interaction (horizontal drag only, no zoom) ----------------------------
-let isDown = false, lastX = 0, rotY = -1.9, velY = 0;
+let isDown = false, lastX = 0, rotY = -0.277, velY = 0;
 let isLocked = false, targetRotY = null;
 const cv = renderer.domElement;
 cv.addEventListener(&#x27;pointerdown&#x27;, e =&gt; { isDown = true; lastX = e.clientX; cv.setPointerCapture(e.pointerId); });
@@ -487,17 +489,17 @@ const tempV = new THREE.Vector3();
       return;
     }
 
-    // ---- back face: show state-2 at 25% opacity ----
+    // ---- back face: show dot only at 25% opacity ----
     if (!isVisible) {
       marker.el.style.left    = sx + 'px';
       marker.el.style.top     = sy + 'px';
       marker.el.style.opacity = '0.25';
       marker.dotEl.style.pointerEvents = 'none';
       marker.cardEl.style.pointerEvents = 'none';
-      const cls = 'globe-marker state-2' + hubSuffix;
+      const cls = 'globe-marker state-1' + hubSuffix;
       if (marker.el.className !== cls) {
         marker.el.className = cls;
-        marker.currentState = 2;
+        marker.currentState = 1;
         marker.visibleSince = 0;
       }
       if (marker.timeVal) marker.timeVal.textContent = getLocalTime(loc.offset);
