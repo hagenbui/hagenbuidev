@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Varmeta Blockchain Ledger</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background: #fff;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .vp {
+      position: relative; width: 100%;
+      max-width: 675px; max-height: 323px;
+      aspect-ratio: 675 / 323; overflow: hidden;
+    }
+    svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+    /* ── Node visual states ── */
+    .n-outer { fill: #fff; stroke: #eaeaea; stroke-width: 1; transition: stroke .4s; }
+    .n-ring  { fill: none; stroke: #eaeaea; stroke-width: 1.2;
+               transform-box: fill-box; transform-origin: center;
+               transition: stroke .4s, transform .4s ease; }
+    .n-dot   { fill: #eaeaea; transform-box: fill-box; transform-origin: center;
+               transition: fill .4s, transform .4s ease; }
+    .n-badge { opacity: 0; transition: opacity .25s .1s; }
+
+    .chk .n-outer { stroke: #d9f0ff; }
+    .chk .n-ring  { stroke: #1078f3; transform: rotate(45deg); }
+    .chk .n-dot   { fill:   #1078f3; transform: rotate(45deg); }
+    .chk .n-badge { opacity: 1; }
+
+    /* Edge fade overlays */
+    .fl { position: absolute; top: 0; bottom: 0; width: 80px; pointer-events: none; z-index: 5; }
+    .fl-l { left:  0; background: linear-gradient(90deg,  #fff, transparent); }
+    .fl-r { right: 0; background: linear-gradient(270deg, #fff, transparent); }
+  </style>
+</head>
+<body>
+<div class="vp">
+  <svg id="sv" viewBox="0 0 675 323">
+    <defs>
+      <linearGradient id="sg" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%"   stop-color="#1078f3" stop-opacity="0"/>
+        <stop offset="35%"  stop-color="#1078f3" stop-opacity="1"/>
+        <stop offset="65%"  stop-color="#1078f3" stop-opacity="1"/>
+        <stop offset="100%" stop-color="#1078f3" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <g id="cg">
+      <g id="lg"></g>   <!-- L-shaped connection lines (gray) -->
+      <g id="active-lg"></g> <!-- active connection lines (cyan/blue) -->
+      <g id="ng"></g>   <!-- node boxes -->
+      <g id="sug"></g>  <!-- surge particles -->
+    </g>
+  </svg>
+  <div class="fl fl-l"></div>
+  <div class="fl fl-r"></div>
+</div>
+
+<script>
+const NS  = 'http://www.w3.org/2000/svg';
+
+// Spacious, asymmetric node positions within an 801px tile
+// Optimized mathematically so that every single segment length
+// is an integer multiple of the 9px dash cycle (5px dash + 4px gap)
+const PAT = [
+  { id: 0, rx: 0,   ry: 161 }, // Start: mid Y
+  { id: 1, rx: 153, ry: 71  }, // top
+  { id: 2, rx: 171, ry: 251 }, // bot
+  { id: 3, rx: 324, ry: 71  }, // top
+  { id: 4, rx: 342, ry: 161 }, // mid
+  { id: 5, rx: 495, ry: 251 }, // bot
+  { id: 6, rx: 513, ry: 71  }, // top
+  { id: 7, rx: 666, ry: 161 }, // mid
+];
+const TW  = 801;    // tile width (multiple of 9: 9 * 89)
+const NT  = 3;      // tiles in pool
+const SCROLL_PPS = 48;
+
+let nodes = [];
+for (let t = 0; t < NT; t++) {
+  PAT.forEach(p => {
+    nodes.push({
+      tile: t,
+      id: p.id,
+      cx: p.rx + t * TW,
+      cy: p.ry,
+      checked: false,
+      el: null
+    });
+  });
+}
+
+const cg  = document.getElementById('cg');
+const lg  = document.getElementById('lg');
+const ng  = document.getElementById('ng');
+const sug = document.getElementById('sug');
+const activeLg = document.getElementById('active-lg');
+
+/* ── SVG node factory ──────────────────────────────────────── */
+const SZ = 44, H = SZ / 2, IR = 11, ID = 5;
+
+function mkNode(n) {
+  const g = document.createElementNS(NS, 'g');
+  g.setAttribute('transform', `translate(${n.cx},${n.cy})`);
+
+  const outer = document.createElementNS(NS, 'rect');
+  outer.setAttribute('x', -H); outer.setAttribute('y', -H);
+  outer.setAttribute('width', SZ); outer.setAttribute('height', SZ);
+  outer.setAttribute('class', 'n-outer');
+  g.appendChild(outer);
+
+  const ring = document.createElementNS(NS, 'rect');
+  ring.setAttribute('x', -IR); ring.setAttribute('y', -IR);
+  ring.setAttribute('width', IR * 2); ring.setAttribute('height', IR * 2);
+  ring.setAttribute('class', 'n-ring');
+  g.appendChild(ring);
+
+  const dot = document.createElementNS(NS, 'rect');
+  dot.setAttribute('x', -ID); dot.setAttribute('y', -ID);
+  dot.setAttribute('width', ID * 2); dot.setAttribute('height', ID * 2);
+  dot.setAttribute('class', 'n-dot');
+  g.appendChild(dot);
+
+  // Check badge (bottom-right corner)
+  const badge = document.createElementNS(NS, 'g');
+  badge.setAttribute('class', 'n-badge');
+  badge.setAttribute('transform', `translate(${H - 1},${H - 1})`);
+
+  const br = document.createElementNS(NS, 'rect');
+  br.setAttribute('x', '-11'); br.setAttribute('y', '-11');
+  br.setAttribute('width', '22'); br.setAttribute('height', '22');
+  br.setAttribute('fill', '#fff');
+  br.setAttribute('stroke', '#eef8ff'); br.setAttribute('stroke-width', '1');
+  badge.appendChild(br);
+
+  const bk = document.createElementNS(NS, 'path');
+  bk.setAttribute('d', 'M -4 0 L -1 3 L 5 -3');
+  bk.setAttribute('stroke', '#1078f3'); bk.setAttribute('stroke-width', '1.5');
+  bk.setAttribute('fill', 'none');
+  bk.setAttribute('stroke-linecap', 'round'); bk.setAttribute('stroke-linejoin', 'round');
+  badge.appendChild(bk);
+
+  g.appendChild(badge);
+  ng.appendChild(g);
+  return g;
+}
+
+/* ── Initialise nodes ───────────────────────────────────────── */
+nodes.forEach(n => { n.el = mkNode(n); });
+
+/* ── Edge connections ───────────────────────────────────────── */
+// Explicitly define the bend X coordinates to ensure vertical lines align perfectly
+const edgeDefs = [
+  { from: 0, to: 1, bendX: 72 },
+  { from: 0, to: 2, bendX: 72 },
+  { from: 1, to: 3, bendX: 234 },
+  { from: 2, to: 4, bendX: 333 },
+  { from: 3, to: 4, bendX: 333 },
+  { from: 4, to: 5, bendX: 414 },
+  { from: 4, to: 6, bendX: 414 },
+  { from: 5, to: 7, bendX: 585 },
+  { from: 6, to: 7, bendX: 585 },
+  { from: 7, to: 0, bendX: 729, isCrossTile: true },
+];
+
+let edges = [];
+for (let t = 0; t < NT; t++) {
+  const nextT = (t + 1) % NT;
+  edgeDefs.forEach(d => {
+    edges.push({
+      from: [t, d.from],
+      to: [d.isCrossTile ? nextT : t, d.to],
+      localBendX: d.bendX,
+      dxBend: d.bendX - PAT[d.from].rx, // Store constant horizontal distance to bend
+      fromNode: null,
+      toNode: null
+    });
+  });
+}
+
+edges.forEach((e, idx) => {
+  e.fromNode = nodes.find(n => n.tile === e.from[0] && n.id === e.from[1]);
+  e.toNode   = nodes.find(n => n.tile === e.to[0] && n.id === e.to[1]);
+
+  // Varies speed between 65 and 110 px/s
+  e.surge = {
+    active: false,
+    progressPx: 0,
+    speed: 65 + (Math.sin(idx * 1.7) + 1) * 22.5
+  };
+});
+
+/* ── L-path helpers ─────────────────────────────────────────── */
+function lPathD(e) {
+  const a = e.fromNode;
+  const b = e.toNode;
+  let bx = b.cx;
+  if (bx < a.cx) bx += NT * TW;
+
+  const bendX = a.cx + e.dxBend;
+
+  if (Math.abs(a.cy - b.cy) < 2) return `M${a.cx} ${a.cy}H${bx}`;
+  return `M${a.cx} ${a.cy}H${bendX}V${b.cy}H${bx}`;
+}
+
+function getEdgeLength(e) {
+  let bx = e.toNode.cx;
+  if (bx < e.fromNode.cx) bx += NT * TW;
+  return (bx - e.fromNode.cx) + Math.abs(e.toNode.cy - e.fromNode.cy);
+}
+
+/* ── Build connection lines ─────────────────────────────────── */
+function buildLines() {
+  lg.innerHTML = '';
+  activeLg.innerHTML = '';
+  edges.forEach(e => {
+    const d = lPathD(e);
+
+    // Gray line
+    const elGray = document.createElementNS(NS, 'path');
+    elGray.setAttribute('d', d);
+    elGray.setAttribute('fill', 'none');
+    elGray.setAttribute('stroke', '#eaeaea');
+    elGray.setAttribute('stroke-width', '1.5');
+    elGray.setAttribute('stroke-dasharray', '5 4');
+    elGray.setAttribute('stroke-linecap', 'round');
+    lg.appendChild(elGray);
+
+    // Cyan/blue line (initially empty)
+    const elCyan = document.createElementNS(NS, 'path');
+    elCyan.setAttribute('d', '');
+    elCyan.setAttribute('fill', 'none');
+    elCyan.setAttribute('stroke', '#1078f3');
+    elCyan.setAttribute('stroke-width', '1.5');
+    elCyan.setAttribute('stroke-linecap', 'round');
+    activeLg.appendChild(elCyan);
+    e.cyanEl = elCyan;
+  });
+}
+
+buildLines();
+
+/* ── Surge drawing ─────────────────────────────────────────── */
+function drawSurge(x, y) {
+  const circle = document.createElementNS(NS, 'circle');
+  circle.setAttribute('r', '3.5');
+  circle.setAttribute('cx', x);
+  circle.setAttribute('cy', y);
+  circle.setAttribute('fill', '#1078f3');
+  sug.appendChild(circle);
+}
+
+/* ── Initialize checked states and surges at start ─────────── */
+nodes.forEach(n => {
+  if (n.cx <= 337.5) {
+    n.checked = true;
+    n.el.setAttribute('class', 'chk');
+  }
+});
+
+edges.forEach(e => {
+  let bx = e.toNode.cx;
+  if (bx < e.fromNode.cx) bx += NT * TW;
+
+  if (e.fromNode.cx <= 337.5 && bx > 337.5) {
+    e.surge.active = true;
+    const bendX = e.fromNode.cx + e.dxBend;
+    let dist = 0;
+    if (337.5 < bendX) {
+      dist = 337.5 - e.fromNode.cx;
+    } else {
+      dist = (bendX - e.fromNode.cx) + Math.abs(e.toNode.cy - e.fromNode.cy) + (337.5 - bendX);
+    }
+    e.surge.progressPx = dist;
+  }
+});
+
+/* ── Animation Loop ─────────────────────────────────────────── */
+let off = 0;
+let lastTs = null;
+
+function animate(ts) {
+  if (!lastTs) lastTs = ts;
+  const dt = Math.min((ts - lastTs) / 1000, 0.05);
+  lastTs = ts;
+
+  // 1. Scroll track continuously
+  off += SCROLL_PPS * dt;
+
+  if (off >= TW) {
+    off -= TW;
+    nodes.forEach(n => {
+      n.cx -= TW;
+    });
+
+    nodes.forEach(n => {
+      if (n.cx < 0) {
+        n.cx += NT * TW;
+        n.checked = false;
+        n.el.setAttribute('class', '');
+
+        // Clean up surges connected to recycled node
+        edges.forEach(e => {
+          if (e.fromNode === n || e.toNode === n) {
+            e.surge.active = false;
+            e.surge.progressPx = 0;
+          }
+        });
+      }
+      n.el.setAttribute('transform', `translate(${n.cx},${n.cy})`);
+    });
+    buildLines();
+  }
+
+  // Translate container
+  cg.setAttribute('transform', `translate(${-off},0)`);
+
+  // 2. Propagation Logic: Trigger surges on outgoing edges when destination is in first 1/2 of frame
+  edges.forEach(e => {
+    if (e.fromNode.checked && !e.toNode.checked && !e.surge.active) {
+      // Trigger only when the destination node enters the first 1/2 of viewport (screen X <= 337.5)
+      const destScreenX = e.toNode.cx - off;
+      if (destScreenX <= 337.5) {
+        e.surge.active = true;
+        e.surge.progressPx = 0;
+      }
+    }
+  });
+
+  // 3. Advance active surges (they wait at the end of the edge if consensus is not met)
+  edges.forEach(e => {
+    if (e.surge.active) {
+      const L = getEdgeLength(e);
+      if (e.surge.progressPx < L) {
+        e.surge.progressPx += e.surge.speed * dt;
+        if (e.surge.progressPx >= L) {
+          e.surge.progressPx = L;
+        }
+      }
+    }
+  });
+
+  // 4. Consensus Check: Nodes become checked only when ALL incoming active edges have their surges arrived
+  nodes.forEach(n => {
+    if (!n.checked) {
+      const incoming = edges.filter(e => e.toNode === n);
+      if (incoming.length > 0) {
+        const allArrived = incoming.every(e => e.surge.active && e.surge.progressPx >= getEdgeLength(e));
+        if (allArrived) {
+          n.checked = true;
+          n.el.setAttribute('class', 'chk');
+
+          // Deactivate the completed incoming surges
+          incoming.forEach(e => {
+            e.surge.active = false;
+            e.surge.progressPx = 0;
+          });
+        }
+      }
+    }
+  });
+
+  // 5. Update active cyan lines path geometry
+  edges.forEach(e => {
+    let bx = e.toNode.cx;
+    if (bx < e.fromNode.cx) bx += NT * TW;
+
+    if (e.surge.active) {
+      const dist = e.surge.progressPx;
+      const x1 = e.fromNode.cx;
+      const y1 = e.fromNode.cy;
+      const y2 = e.toNode.cy;
+      const bendX = x1 + e.dxBend;
+      const L1 = bendX - x1;
+      const L2 = Math.abs(y2 - y1);
+
+      let d = '';
+      if (dist <= L1) {
+        d = `M${x1} ${y1}H${x1 + dist}`;
+      } else if (dist > L1 && dist <= L1 + L2) {
+        const dy = dist - L1;
+        const y_curr = y1 + (y2 > y1 ? dy : -dy);
+        d = `M${x1} ${y1}H${bendX}V${y_curr}`;
+      } else {
+        const dx = dist - L1 - L2;
+        d = `M${x1} ${y1}H${bendX}V${y2}H${bendX + dx}`;
+      }
+      e.cyanEl.setAttribute('d', d);
+    } else if (e.toNode.checked) {
+      const d = lPathD(e);
+      e.cyanEl.setAttribute('d', d);
+    } else {
+      e.cyanEl.setAttribute('d', '');
+    }
+  });
+
+  // 6. Draw active surge particles
+  sug.innerHTML = '';
+  edges.forEach(e => {
+    if (e.surge.active) {
+      let bx = e.toNode.cx;
+      if (bx < e.fromNode.cx) bx += NT * TW;
+
+      const dist = e.surge.progressPx;
+      const x1 = e.fromNode.cx;
+      const y1 = e.fromNode.cy;
+      const y2 = e.toNode.cy;
+      const bendX = x1 + e.dxBend;
+      const L1 = bendX - x1;
+      const L2 = Math.abs(y2 - y1);
+
+      let x_curr = x1;
+      let y_curr = y1;
+
+      if (dist <= L1) {
+        x_curr = x1 + dist;
+        y_curr = y1;
+      } else if (dist > L1 && dist <= L1 + L2) {
+        x_curr = bendX;
+        const dy = dist - L1;
+        y_curr = y1 + (y2 > y1 ? dy : -dy);
+      } else {
+        const dx = dist - L1 - L2;
+        x_curr = bendX + dx;
+        y_curr = y2;
+      }
+
+      drawSurge(x_curr, y_curr);
+    }
+  });
+
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

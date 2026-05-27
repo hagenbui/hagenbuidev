@@ -398,12 +398,11 @@
     .diff-del { color: var(--color-red); background-color: var(--color-red-bg); padding: 0 4px; border-radius: 2px; }
     .diff-add { color: var(--color-green); background-color: var(--color-green-bg); padding: 0 4px; border-radius: 2px; }
     
-    /* Stable Typewriter Cursor (1.1em vertical-align text-bottom prevents layout line shifts) */
     .type-cursor {
       display: inline-block;
-      width: 6px;
-      height: 1.1em;
-      background-color: var(--color-accent);
+      width: 8px;
+      height: 2px;
+      background-color: var(--text-quaternary); /* gray cursor */
       margin-left: 2px;
       vertical-align: text-bottom;
       animation: blink 0.8s step-end infinite;
@@ -411,7 +410,7 @@
     
     @keyframes blink {
       from, to { background-color: transparent }
-      50% { background-color: var(--color-accent) }
+      50% { background-color: var(--text-quaternary) }
     }
     
     /* Action Button Row: Swaps in with checklist (Transitions smoothly, no shadows) */
