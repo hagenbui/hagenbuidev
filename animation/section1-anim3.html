@@ -5,16 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Varmeta Blockchain Ledger</title>
   <style>
+    /* ── Camera Control ── */
+    :root {
+      --cam-perspective:        900px;
+      --cam-perspective-origin: 50% 40%;
+      --cam-rotateX:            52deg;
+      --cam-rotateZ:            -18deg;
+      --cam-scale:              1.15;
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
     html, body {
       width: 100%; height: 100%; overflow: hidden;
       background: #fff;
       display: flex; align-items: center; justify-content: center;
+      perspective: var(--cam-perspective);
+      perspective-origin: var(--cam-perspective-origin);
     }
     .vp {
       position: relative; width: 100%;
       max-width: 675px; max-height: 323px;
       aspect-ratio: 675 / 323; overflow: hidden;
+      transform: rotateX(var(--cam-rotateX)) rotateZ(var(--cam-rotateZ)) scale(var(--cam-scale));
+      transform-style: preserve-3d;
+      transform-origin: center center;
     }
     svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 
