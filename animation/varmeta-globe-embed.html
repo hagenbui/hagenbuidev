@@ -53,14 +53,6 @@
   }
   canvas:active { cursor: grabbing; }
   #tooltip-container {
-    /* Token variables from figma design */
-    --colors-alpha-alpha-white-50: rgba(255, 255, 255, 0.5);
-    --colors-border-brands-bd-brand-secondary: #bce5ff;
-    --colors-border-brands-bd-brand: #1078f3;
-    --colors-text-brands-text-brand-primary: #1078f3;
-    --colors-text-neutrals-text-secondary: #494949;
-    --backdrop-blur: 10px;
-
     position: absolute;
     top: 0; left: 0;
     width: 100%; height: 100%;
@@ -69,98 +61,115 @@
     z-index: 10;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   }
-  .globe-tooltip {
+  .globe-marker {
     position: absolute;
-    transform: translate(-50%, -100%);
-    margin-top: -12px;
-    background: var(--colors-alpha-alpha-white-50);
-    backdrop-filter: blur(var(--backdrop-blur));
-    -webkit-backdrop-filter: blur(var(--backdrop-blur));
-    border: 1px solid var(--colors-border-brands-bd-brand-secondary);
-    padding: 8px 16px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
     opacity: 0;
     transition: opacity 0.3s ease;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-    display: flex;
-    align-items: center;
-    gap: 16px;
   }
-  .globe-tooltip::after {
-    content: '';
+  /* Persistent dot — always at exact globe location */
+  .marker-dot {
+    position: relative; flex-shrink: 0;
+    width: 16px; height: 16px;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: auto; cursor: pointer;
+  }
+  .varmeta-dot-logo { display: block; width: 16.072px; height: 12px; }
+  .marker-dot .diamond-inner { width: 6px; height: 6px; position: absolute; background: #1078f3; transform: rotate(45deg); }
+  .marker-dot .diamond-outer { width: 12px; height: 12px; position: absolute; border: 1px solid #1078f3; transform: rotate(45deg); }
+  /* Varmeta hub dot — 25% larger */
+  .globe-marker.varmeta .marker-dot { width: 20px; height: 20px; }
+  .globe-marker.varmeta .varmeta-dot-logo { width: 20.09px; height: 15px; }
+  /* Card: floats above dot with 8px gap; hidden until state-2 */
+  .marker-card {
     position: absolute;
-    bottom: -5px;
-    left: 50%;
+    bottom: calc(100% + 8px); left: 50%;
     transform: translateX(-50%);
-    border-width: 5px 5px 0;
-    border-style: solid;
-    border-color: var(--colors-alpha-alpha-white-50) transparent transparent;
-    pointer-events: none;
-  }
-  .tt-icon-container {
-    display: flex;
+    display: none;
     align-items: center;
-    justify-content: center;
-    color: var(--colors-text-brands-text-brand-primary);
     flex-shrink: 0;
-    width: 16px;
-    height: 16px;
+    overflow: visible;
   }
-  .tt-text-container {
-    display: flex;
-    flex-direction: column;
-    align-items: start;
-    white-space: nowrap;
+  .globe-marker.state-2 .marker-card,
+  .globe-marker.state-3 .marker-card { display: flex; }
+  .globe-marker.state-2 .marker-card {
+    width: 40px; height: 40px; padding: 2px; gap: 0;
+    background: rgba(255,255,255,0.5);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid #bce5ff;
   }
-  .globe-tooltip .loc-name {
-    font-size: 16px;
-    font-weight: 600;
-    line-height: 24px;
-    color: var(--colors-text-brands-text-brand-primary);
+  .globe-marker.state-3 .marker-card {
+    padding: 8px 16px; gap: 12px;
+    background: rgba(255,255,255,0.5);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid #bce5ff;
   }
-  .globe-tooltip .loc-time {
-    font-size: 14px;
-    font-weight: 400;
-    line-height: 20px;
-    color: var(--colors-text-neutrals-text-secondary);
-  }
-  
-  /* Corner Brackets styling */
+  .globe-marker.varmeta.state-2 .marker-card,
+  .globe-marker.varmeta.state-3 .marker-card { background: #1078f3; border-color: #1078f3; }
+  .globe-marker.varmeta.state-3 .marker-card { gap: 16px; }
   .tt-corner {
-    position: absolute;
-    width: 8px;
-    height: 8px;
-    border-color: var(--colors-border-brands-bd-brand);
-    border-style: solid;
-    border-width: 0;
+    position: absolute; width: 8px; height: 8px;
+    border-color: #1078f3; border-style: solid; border-width: 0;
+    display: none;
   }
-  .tt-tl {
-    top: -1px;
-    left: -1px;
-    border-top-width: 1px;
-    border-left-width: 1px;
+  .globe-marker.state-2 .tt-corner,
+  .globe-marker.state-3 .tt-corner { display: block; }
+  .globe-marker.varmeta.state-2 .tt-corner,
+  .globe-marker.varmeta.state-3 .tt-corner { border-color: white; }
+  .tt-tl { top: -1px; left: -1px; border-top-width: 1px; border-left-width: 1px; }
+  .tt-tr { top: -1px; right: -1px; border-top-width: 1px; border-right-width: 1px; }
+  .tt-bl { bottom: -1px; left: -1px; border-bottom-width: 1px; border-left-width: 1px; }
+  .tt-br { bottom: -1px; right: -1px; border-bottom-width: 1px; border-right-width: 1px; }
+  .marker-icon {
+    position: relative; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
   }
-  .tt-tr {
-    top: -1px;
-    right: -1px;
-    border-top-width: 1px;
-    border-right-width: 1px;
+  .globe-marker.state-2 .marker-icon { width: 36px; height: 36px; }
+  .globe-marker.state-3 .marker-icon { display: none; }
+  /* Diamonds inside card icon */
+  .marker-icon .diamond-inner { position: absolute; background: #1078f3; transform: rotate(45deg); width: 14px; height: 14px; }
+  .marker-icon .diamond-outer { position: absolute; border: 1px solid #1078f3; transform: rotate(45deg); width: 26px; height: 26px; }
+  /* Varmeta logo inside card icon (state-2 sizing per Figma 3875) */
+  .varmeta-logo { display: block; position: absolute; }
+  .varmeta-sm { width: 24px; height: 18px; left: 6px; top: 9px; transform: none; }
+  .varmeta-lg { display: none; }
+  .marker-text {
+    display: flex; flex-direction: column; align-items: start;
+    white-space: nowrap; overflow: hidden;
+    max-width: 0; opacity: 0;
+    transition: max-width 0.3s ease, opacity 0.2s ease;
   }
-  .tt-bl {
-    bottom: -1px;
-    left: -1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
+  .globe-marker.state-3 .marker-text { max-width: 200px; opacity: 1; }
+  .loc-name { font-size: 20px; font-weight: 600; line-height: 28px; color: #1078f3; }
+  .globe-marker.varmeta .loc-name { color: #eef8ff; }
+  .loc-time { font-size: 14px; font-weight: 400; line-height: 20px; color: #494949; }
+  .globe-marker.varmeta .loc-time { color: #d9f0ff; }
+  .loc-time-tz { color: #797979; }
+  .globe-marker.varmeta .loc-time-tz { color: #8ed5ff; }
+  /* ---- bottom-edge pin (front-face but below viewport) ---- */
+  .globe-marker.pin-mode { pointer-events: auto; cursor: pointer; z-index: 2; }
+  .globe-marker.pin-mode:hover { z-index: 20; }
+  .globe-marker.pin-mode .marker-dot { display: none; }
+  .globe-marker.pin-mode .marker-card {
+    display: flex; bottom: 8px;
+    padding: 5px; gap: 0;
+    background: rgba(255,255,255,0.88);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid #bce5ff;
+    transition: padding 0.2s ease, gap 0.2s ease;
   }
-  .tt-br {
-    bottom: -1px;
-    right: -1px;
-    border-bottom-width: 1px;
-    border-right-width: 1px;
-  }
-  @keyframes pulse-dot {
-    0%, 100% { opacity: 0.4; transform: scale(0.85); }
-    50% { opacity: 1; transform: scale(1.2); }
-  }
+  .globe-marker.varmeta.pin-mode .marker-card { background: #1078f3; border-color: #1078f3; }
+  .globe-marker.pin-mode .tt-corner { display: none; }
+  .globe-marker.pin-mode .marker-icon { width: 36px; height: 36px; }
+  .globe-marker.pin-mode .marker-text { max-width: 0; opacity: 0; }
+  .globe-marker.pin-mode:hover .marker-card { padding: 8px 16px; gap: 12px; }
+  .globe-marker.varmeta.pin-mode:hover .marker-card { background: #1078f3; border-color: #1078f3; gap: 16px; }
+  .globe-marker.pin-mode:hover .marker-icon { display: none; }
+  .globe-marker.pin-mode:hover .marker-text { max-width: 200px; opacity: 1; }
+  .globe-marker.pin-mode:hover .tt-corner { display: block; }
+  .globe-marker.varmeta.pin-mode:hover .tt-corner { border-color: white; }
 &lt;/style&gt;
 &lt;/head&gt;
 &lt;body&gt;
@@ -172,7 +181,7 @@ const LAND = [0.2719, 0.9358, -0.2244, 0.2555, 0.9342, -0.249, 0.2885, 0.9332, -
 
 const C = {
   dot:          0xbce5ff,
-  grid:         0x8ed5ff,
+  grid:         0xbce5ff, // colorsBorderBrandsBdBrandSecondary
   arcBase:      0xc8cdd5,
   arcHighlight: 0x1078f3,
   hub:          0x1567e0,
@@ -205,8 +214,9 @@ scene.add(globe);
 //   - If the section is shorter than the globe&#x27;s radius, the globe scales
 //     DOWN so its top still sits just below the top edge (never top-cropped).
 //   - Top padding keeps a small gap above the globe.
-const FILL_W      = 1.6;   // larger globe so arcs reach near container top
-const PADDING_TOP = 0;
+const FILL_W        = 1.6;
+const PADDING_TOP   = 24; // px of breathing room at top edge for arcs
+const BOTTOM_REVEAL = 60; // px below equator to keep visible
 
 let W, H, camZ;
 
@@ -217,12 +227,9 @@ function frame() {
   renderer.setSize(W, H, false);
   camera.aspect = W / H;
 
-  // Globe radius in px: sized by width, but capped so top hemisphere + arcs fit in height.
-  const radiusPx = Math.min((FILL_W * W) / 2, (H - 24) / 1.165);
+  // Arc peaks extend ~1.165× the radius above globe center; PADDING_TOP reserves space.
+  const radiusPx = Math.min((FILL_W * W) / 2, (H - BOTTOM_REVEAL - PADDING_TOP) / 1.165);
 
-  // Camera distance so globe radius projects to radiusPx.
-  // projectedRadiusPx = R / (tan(fovR/2) * camZ) * (H/2)
-  // =&gt; camZ = R * (H/2) / (tan(fovR/2) * radiusPx)
   camZ = R * (H / 2) / (Math.tan(fovR / 2) * radiusPx);
   camera.position.set(0, 0, camZ);
   camera.lookAt(0, 0, 0);
@@ -230,8 +237,8 @@ function frame() {
 
   const worldPerPx = camZ * Math.tan(fovR / 2) / (H / 2);
 
-  // Anchor equator (globe center) to the bottom edge of the container.
-  globe.position.y = -(H / 2) * worldPerPx;
+  // Anchor equator BOTTOM_REVEAL px above the bottom edge.
+  globe.position.y = -(H / 2 - BOTTOM_REVEAL) * worldPerPx;
 }
 
 // ---- White core mask --------------------------------------------------------
@@ -252,13 +259,13 @@ for (let lon = -180; lon &lt; 180; lon += 20) {
     const phi = (90 - lat) * Math.PI / 180, th = (lon + 180) * Math.PI / 180;
     pts.push(new THREE.Vector3(-gR*Math.sin(phi)*Math.cos(th), gR*Math.cos(phi), gR*Math.sin(phi)*Math.sin(th)));
   }
-  addLine(pts, 0.15);
+  addLine(pts, 0.30);
 }
 for (let lat = -80; lat &lt;= 80; lat += 20) {
   const rad = gR * Math.cos(lat*Math.PI/180), y = gR * Math.sin(lat*Math.PI/180);
   const pts = [];
   for (let i = 0; i &lt;= 96; i++) { const a = i/96*Math.PI*2; pts.push(new THREE.Vector3(Math.cos(a)*rad, y, Math.sin(a)*rad)); }
-  addLine(pts, lat === 0 ? 0.25 : 0.12);
+  addLine(pts, lat === 0 ? 0.50 : 0.22);
 }
 
 // ---- Land dots --------------------------------------------------------------
@@ -294,8 +301,6 @@ function ll2v(lat, lon, r) {
 
 const LOCATIONS = [
   { name: 'Vietnam (Varmeta)', lat: 21.03, lon: 105.85, offset: 7,  tzName: 'ICT (GMT+7)', isHub: true },
-  { name: 'Singapore',         lat:  1.28, lon: 103.85, offset: 8,  tzName: 'SGT (GMT+8)' },
-  { name: 'Bangkok',           lat: 13.76, lon: 100.50, offset: 7,  tzName: 'ICT (GMT+7)' },
   { name: 'Zurich',            lat: 47.37, lon:   8.54, offset: 2,  tzName: 'CEST (GMT+2)' },
   { name: 'San Francisco',     lat: 37.77, lon:-122.42, offset: -7, tzName: 'PDT (GMT-7)' },
   { name: 'New York',          lat: 41.03, lon: -73.71, offset: -4, tzName: 'EDT (GMT-4)' }
@@ -308,7 +313,7 @@ function addMarker(lat, lon, isHub) {
   geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
   const mat = new THREE.PointsMaterial({
     size: isHub ? 7 : 5, color: isHub ? C.hub : C.dest,
-    transparent: true, opacity: isHub ? 1 : 0.9,
+    transparent: true, opacity: 0,
     depthWrite: false, sizeAttenuation: true
   });
   const pt = new THREE.Points(geo, mat);
@@ -326,31 +331,45 @@ const markers = LOCATIONS.map(loc =&gt; {
 // Reference to hub marker for pulsating size animation
 const hubMarker = markers.find(m =&gt; m.loc.isHub).pt;
 
-// ---- HTML Tooltips ----------------------------------------------------------
+// ---- HTML Markers -----------------------------------------------------------
+// SM = 16.072×12px logo (state-1/2/pin/edge); LG = 21.429×16px logo (state-3 expanded)
+const VARMETA_LOGO_SM = 'https://www.figma.com/api/mcp/asset/aaaad2ba-79f5-4b05-87c4-0b8781af28ba';
+const VARMETA_LOGO_LG = 'https://www.figma.com/api/mcp/asset/660515dc-0066-49b7-8094-7197a0cfeb7c';
 const tooltipContainer = document.getElementById('tooltip-container');
 const tooltips = LOCATIONS.map(loc =&gt; {
   const el = document.createElement('div');
-  el.className = 'globe-tooltip';
-  el.innerHTML = `
-    <div class='loc-name'>${loc.name}</div>
-    <div class='loc-time'>
-      <span class='loc-time-dot'></span>
-      <span class='time-text'></span>
-    </div>
-  `;
+  el.className = 'globe-marker state-1' + (loc.isHub ? ' varmeta' : '');
+  const dotIconHTML = loc.isHub
+    ? '<img class=\'varmeta-dot-logo\' src=\'' + VARMETA_LOGO_SM + '\' alt=\'\'>': '<div class=\'diamond-inner\'></div><div class=\'diamond-outer\'></div>';
+  const cardIconHTML = loc.isHub
+    ? '<img class=\'varmeta-logo varmeta-sm\' src=\'' + VARMETA_LOGO_SM + '\' alt=\'\'>'+
+      '<img class=\'varmeta-logo varmeta-lg\' src=\'' + VARMETA_LOGO_LG + '\' alt=\'\'>'
+    : '<div class=\'diamond-inner\'></div><div class=\'diamond-outer\'></div>';
+  el.innerHTML = `<div class='marker-dot'>${dotIconHTML}</div><div class='marker-card'><div class='tt-corner tt-tl'></div><div class='tt-corner tt-tr'></div><div class='tt-corner tt-bl'></div><div class='tt-corner tt-br'></div><div class='marker-icon'>${cardIconHTML}</div><div class='marker-text'><div class='loc-name'>${loc.name}</div><div class='loc-time'><span class='time-val'></span><span class='loc-time-tz'></span></div></div></div>`;
   tooltipContainer.appendChild(el);
-  return { loc, el };
+  const dotEl = el.querySelector('.marker-dot');
+  const cardEl = el.querySelector('.marker-card');
+  const onFocus = () => {
+    const th = (loc.lon + 180) * Math.PI / 180;
+    targetRotY = Math.PI / 2 - th;
+    isLocked = true;
+  };
+  const onMouseOut = (e) => { if (!el.contains(e.relatedTarget)) { isLocked = false; targetRotY = null; } };
+  dotEl.addEventListener('click', onFocus);
+  cardEl.addEventListener('click', onFocus);
+  dotEl.addEventListener('mouseout', onMouseOut);
+  cardEl.addEventListener('mouseout', onMouseOut);
+  const timeVal = el.querySelector('.time-val');
+  const timeTz = el.querySelector('.loc-time-tz');
+  return { loc, el, dotEl, cardEl, currentState: 1, visibleSince: 0, timeVal, timeTz };
 });
 
 function getLocalTime(offsetHours) {
   const utc = new Date().getTime() + new Date().getTimezoneOffset() * 60000;
   const local = new Date(utc + 3600000 * offsetHours);
-  let h = local.getHours();
+  const h = local.getHours();
   const m = String(local.getMinutes()).padStart(2, '0');
-  const ampm = h &gt;= 12 ? 'PM' : 'AM';
-  h = h % 12;
-  h = h ? h : 12;
-  return `${h}:${m} ${ampm}`;
+  return `${h}:${m}`;
 }
 
 // ---- Arcs -------------------------------------------------------------------
@@ -362,7 +381,7 @@ function buildArc(fromLL, toLL, delay) {
   const dist = s.distanceTo(e);
   
   const midNormal = s.clone().add(e).normalize();
-  const lift = dist * 0.45;
+  const lift = dist * 0.4;
   const cp1 = s.clone().multiplyScalar(1 + lift / R * 0.5).addScaledVector(midNormal, lift * 0.5);
   const cp2 = e.clone().multiplyScalar(1 + lift / R * 0.5).addScaledVector(midNormal, lift * 0.5);
   
@@ -385,7 +404,8 @@ const destLocs = LOCATIONS.filter(l =&gt; !l.isHub);
 destLocs.forEach((c, i) =&gt; buildArc(hubLoc, c, i * 0.5));
 
 // ---- Interaction (horizontal drag only, no zoom) ----------------------------
-let isDown = false, lastX = 0, rotY = -1.9, velY = 0;
+let isDown = false, lastX = 0, rotY = -0.277, velY = 0;
+let isLocked = false, targetRotY = null;
 const cv = renderer.domElement;
 cv.addEventListener(&#x27;pointerdown&#x27;, e =&gt; { isDown = true; lastX = e.clientX; cv.setPointerCapture(e.pointerId); });
 cv.addEventListener(&#x27;pointerup&#x27;,   () =&gt; isDown = false);
@@ -403,108 +423,137 @@ const tempV = new THREE.Vector3();
 (function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
-  if (!isDown) { velY *= 0.92; rotY += velY + 0.0004; }
+  if (!isDown) {
+    if (isLocked && targetRotY !== null) {
+      // Smooth-rotate toward target; shortest angular path
+      let d = ((targetRotY - rotY) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+      rotY += d * 0.12;
+      velY = 0;
+    } else { velY *= 0.92; rotY += velY + 0.0004; }
+  }
   globe.rotation.y = rotY;
   globe.rotation.x = 0.15;
 
-  hubMarker.material.size = 7 + Math.sin(clock.elapsedTime * 2.2) * 1.2;
+  const hubPos = { x: 0, y: 0, w: 0, visible: false };
+  const now = performance.now();
 
-  // Track and update tooltips and marker dot visibilities
-  const activeTooltips = [];
-  markers.forEach(({ loc, pt }) => {
+  // Pass 1 — project all markers
+  const allProj = markers.map(({ loc, pt }) => {
     pt.getWorldPosition(tempV);
-    
-    // Normal direction of the point from the globe center
     const toPt = tempV.clone().sub(globe.position).normalize();
-    // Direction from the point to the camera
     const toCam = camera.position.clone().sub(tempV).normalize();
-    
-    // Check if the point is on the front hemisphere facing the camera
-    const dot = toPt.dot(toCam);
-    const isVisible = dot > 0.05;
-    
-    const tooltip = tooltips.find(t => t.loc === loc);
-    if (tooltip) {
-      if (isVisible) {
-        tempV.project(camera);
-        const x = (tempV.x * 0.5 + 0.5) * W;
-        const y = (tempV.y * -0.5 + 0.5) * H;
-        
-        const ttHeight = tooltip.el.offsetHeight || 36;
-        const ttWidth = tooltip.el.offsetWidth || 120;
-        const padding = 10;
-        const minY = padding + 12 + ttHeight;
-        const maxY = H - padding + 12;
-        const clampedY = Math.max(minY, Math.min(y, maxY));
-        
-        activeTooltips.push({
-          el: tooltip.el,
-          x: x,
-          y: clampedY,
-          w: ttWidth,
-          h: ttHeight,
-          minY: minY,
-          maxY: maxY,
-          loc: loc
-        });
-      } else {
-        tooltip.el.style.opacity = '0';
-      }
-    }
-    
-    // Fade the marker dot smoothly based on visibility
-    const targetOpacity = isVisible ? (loc.isHub ? 1.0 : 0.9) : 0.05;
-    pt.material.opacity += (targetOpacity - pt.material.opacity) * 0.15;
+    const isVisible = toPt.dot(toCam) > 0.05;
+    const proj = tempV.clone().project(camera);
+    return { loc, isVisible, sx: (proj.x * 0.5 + 0.5) * W, sy: (proj.y * -0.5 + 0.5) * H };
   });
 
-  // Resolve overlaps vertically in screen space
-  for (let iter = 0; iter < 8; iter++) {
-    for (let i = 0; i < activeTooltips.length; i++) {
-      for (let j = i + 1; j < activeTooltips.length; j++) {
-        const a = activeTooltips[i];
-        const b = activeTooltips[j];
-        
-        // Check horizontal overlap with a 6px gap margin
-        const xOverlap = Math.abs(a.x - b.x) < ((a.w + b.w) / 2 + 6);
-        if (!xOverlap) continue;
-        
-        // Check vertical overlap of bodies (bodies are y - 12 - h to y - 12)
-        const aBottom = a.y - 12;
-        const aTop = aBottom - a.h;
-        const bBottom = b.y - 12;
-        const bTop = bBottom - b.h;
-        
-        const yOverlap = (aTop - 6 < bBottom) && (aBottom + 6 > bTop);
-        if (!yOverlap) continue;
-        
-        // Resolve overlap
-        const overlap = Math.min(aBottom, bBottom) - Math.max(aTop, bTop) + 6;
-        
-        // Shift the one higher up further up, lower one further down
-        if (a.y < b.y) {
-          a.y -= overlap * 0.5;
-          b.y += overlap * 0.5;
-        } else {
-          b.y -= overlap * 0.5;
-          a.y += overlap * 0.5;
-        }
-        
-        // Re-clamp within safe bounds
-        a.y = Math.max(a.minY, Math.min(a.y, a.maxY));
-        b.y = Math.max(b.minY, Math.min(b.y, b.maxY));
-      }
-    }
+  // Spread bottom-edge pins (front-face but below viewport)
+  const PIN_Y    = H - 12;
+  const PIN_GAP  = 60;
+  const PIN_EDGE = 32;
+  const pinned = allProj.filter(p => p.isVisible && p.sy >= H);
+  pinned.sort((a, b) => a.sx - b.sx);
+  for (let i = 1; i < pinned.length; i++) {
+    if (pinned[i].sx - pinned[i - 1].sx < PIN_GAP)
+      pinned[i].sx = pinned[i - 1].sx + PIN_GAP;
   }
+  pinned.forEach(p => { p.sx = Math.max(PIN_EDGE, Math.min(W - PIN_EDGE, p.sx)); });
+  const pinMap = new Map(pinned.map(p => [p.loc, p]));
 
-  // Apply positions and content updates
-  activeTooltips.forEach(t => {
-    t.el.style.left = `${t.x}px`;
-    t.el.style.top = `${t.y}px`;
-    t.el.style.opacity = '1';
-    
-    const timeText = t.el.querySelector('.time-text');
-    if (timeText) {
-      timeText.textContent = `${getLocalTime(t.loc.offset)} ${t.loc.tzName}`;
+  // Pass 2 — update DOM
+  allProj.forEach(({ loc, isVisible, sx, sy }) => {
+    const marker = tooltips.find(t => t.loc === loc);
+    if (!marker) return;
+
+    const pin = pinMap.get(loc);
+    const onScreen = sy >= 0 && sy < H;
+    const hubSuffix = loc.isHub ? ' varmeta' : '';
+
+    // Restore child pointer-events (may have been disabled for back-face)
+    marker.dotEl.style.pointerEvents = '';
+    marker.cardEl.style.pointerEvents = '';
+
+    // ---- bottom-edge pin ----
+    if (pin) {
+      marker.el.style.left    = pin.sx + 'px';
+      marker.el.style.top     = PIN_Y  + 'px';
+      marker.el.style.opacity = '1';
+      if (!marker.el.className.includes('pin-mode')) {
+        marker.el.className = 'globe-marker pin-mode' + hubSuffix;
+        marker.currentState = 0;
+        marker.visibleSince = 0;
+      }
+      if (marker.timeVal) marker.timeVal.textContent = getLocalTime(loc.offset);
+      if (marker.timeTz)  marker.timeTz.textContent  = ' ' + loc.tzName;
+      if (loc.isHub) { hubPos.x = pin.sx; hubPos.y = PIN_Y; hubPos.visible = true; }
+      return;
+    }
+
+    // ---- back face: show dot only at 25% opacity ----
+    if (!isVisible) {
+      marker.el.style.left    = sx + 'px';
+      marker.el.style.top     = sy + 'px';
+      marker.el.style.opacity = '0.25';
+      marker.dotEl.style.pointerEvents = 'none';
+      marker.cardEl.style.pointerEvents = 'none';
+      const cls = 'globe-marker state-1' + hubSuffix;
+      if (marker.el.className !== cls) {
+        marker.el.className = cls;
+        marker.currentState = 1;
+        marker.visibleSince = 0;
+      }
+      if (marker.timeVal) marker.timeVal.textContent = getLocalTime(loc.offset);
+      if (marker.timeTz)  marker.timeTz.textContent  = ' ' + loc.tzName;
+      return;
+    }
+
+    // ---- normal visible marker ----
+    if (loc.isHub) {
+      hubPos.x = sx; hubPos.y = sy; hubPos.visible = isVisible;
+      marker.el.style.left    = sx + 'px';
+      marker.el.style.top     = sy + 'px';
+      marker.el.style.opacity = '1';
+      if (onScreen) {
+        if (!marker.visibleSince) marker.visibleSince = now;
+        const target = (now - marker.visibleSince) > 200 ? 3 : 2;
+        if (marker.currentState !== target) {
+          marker.currentState = target;
+          marker.el.className = 'globe-marker state-' + target + ' varmeta';
+        }
+        if (marker.timeVal) marker.timeVal.textContent = getLocalTime(loc.offset);
+        if (marker.timeTz)  marker.timeTz.textContent  = ' ' + loc.tzName;
+      } else {
+        marker.visibleSince = 0;
+        if (marker.currentState !== 1) {
+          marker.currentState = 1;
+          marker.el.className = 'globe-marker state-1 varmeta';
+        }
+      }
+    } else {
+      if (onScreen) {
+        const dx = sx - hubPos.x, dy = sy - hubPos.y;
+        if (hubPos.visible && Math.sqrt(dx * dx + dy * dy) < 160) {
+          marker.el.style.opacity = '0';
+          marker.visibleSince = 0;
+          if (marker.currentState !== 1) { marker.currentState = 1; marker.el.className = 'globe-marker state-1'; }
+          return;
+        }
+        marker.el.style.left    = sx + 'px';
+        marker.el.style.top     = sy + 'px';
+        marker.el.style.opacity = '1';
+        if (!marker.visibleSince) marker.visibleSince = now;
+        const target = (now - marker.visibleSince) > 200 ? 3 : 2;
+        if (marker.currentState !== target) {
+          marker.currentState = target;
+          marker.el.className = 'globe-marker state-' + target;
+        }
+        if (marker.timeVal) marker.timeVal.textContent = getLocalTime(loc.offset);
+        if (marker.timeTz)  marker.timeTz.textContent  = ' ' + loc.tzName;
+      } else {
+        marker.el.style.opacity = '0';
+        marker.visibleSince = 0;
+        if (marker.currentState !== 1) { marker.currentState = 1; marker.el.className = 'globe-marker state-1'; }
+      }
     }
   });
 
