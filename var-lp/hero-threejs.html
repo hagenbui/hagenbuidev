@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Varmeta — Hero Prototype</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue: #1078f3;
+      --blue-bright: #4fa3ff;
+      --navy-deep: #03081a;
+      --text-muted: #7a9cc4;
+      --white: #ffffff;
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--navy-deep);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      overflow-x: hidden;
+    }
+
+    /* ── Hero Section ── */
+    .hero {
+      position: relative;
+      width: 100%;
+      height: 100vh;
+      min-height: 680px;
+      overflow: hidden;
+      background: radial-gradient(ellipse 90% 70% at 50% 100%, #0c2d80 0%, #060f2e 55%, #03081a 100%);
+    }
+
+    /* center glow behind text */
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 700px;
+      height: 55%;
+      background: radial-gradient(ellipse at 50% 60%, rgba(16,120,243,0.12) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* ── Canvas fills bottom 55% ── */
+    #three-canvas {
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 100%;
+      height: 58vh;
+      z-index: 2;
+      pointer-events: none;
+      display: block;
+    }
+
+    /* top-of-canvas fade so text reads cleanly */
+    .canvas-fade-top {
+      position: absolute;
+      bottom: 58vh; left: 0; right: 0;
+      height: 120px;
+      background: linear-gradient(to bottom, transparent, rgba(4,10,28,0));
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    /* bottom edge fade */
+    .canvas-fade-bottom {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 140px;
+      background: linear-gradient(to bottom, transparent, #03081a);
+      z-index: 4;
+      pointer-events: none;
+    }
+
+    /* ── Navbar ── */
+    .navbar {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 22px 48px;
+    }
+    .nav-logo {
+      font-size: 17px; font-weight: 800;
+      color: #fff; letter-spacing: -0.02em;
+      display: flex; align-items: center; gap: 9px;
+    }
+    .nav-logo-mark {
+      width: 28px; height: 28px;
+      background: var(--blue);
+      border-radius: 7px;
+      display: grid; place-items: center;
+    }
+    .nav-logo-mark svg { width: 16px; height: 16px; }
+    .nav-links {
+      display: flex; gap: 36px; list-style: none;
+    }
+    .nav-links a {
+      font-size: 13.5px; font-weight: 500;
+      color: rgba(255,255,255,0.55);
+      text-decoration: none; transition: color 0.18s;
+    }
+    .nav-links a:hover { color: #fff; }
+    .nav-cta {
+      padding: 9px 20px;
+      background: var(--blue);
+      border: none; border-radius: 7px;
+      color: #fff; font-family: inherit;
+      font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: background 0.18s, box-shadow 0.18s;
+      box-shadow: 0 2px 16px rgba(16,120,243,0.35);
+    }
+    .nav-cta:hover {
+      background: #1a8aff;
+      box-shadow: 0 4px 24px rgba(16,120,243,0.55);
+    }
+
+    /* ── Hero text (top half) ── */
+    .hero-content {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 0 24px;
+      padding-top: clamp(90px, 13vh, 140px);
+    }
+
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 11px; font-weight: 700;
+      letter-spacing: 0.16em; text-transform: uppercase;
+      color: var(--blue-bright);
+      margin-bottom: 20px;
+      opacity: 0; animation: fadeUp 0.65s ease 0.1s forwards;
+    }
+    .eyebrow-pip {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--blue-bright);
+      box-shadow: 0 0 7px var(--blue-bright);
+      animation: pip 2.2s ease-in-out infinite;
+    }
+    @keyframes pip {
+      0%,100% { opacity:1; transform:scale(1); }
+      50% { opacity:0.3; transform:scale(0.6); }
+    }
+
+    .hero-h1 {
+      font-size: clamp(38px, 5.2vw, 68px);
+      font-weight: 800;
+      line-height: 1.09;
+      letter-spacing: -0.032em;
+      color: #fff;
+      max-width: 800px;
+      margin-bottom: 22px;
+      opacity: 0; animation: fadeUp 0.65s ease 0.22s forwards;
+    }
+    /* gradient on second line */
+    .hero-h1 em {
+      font-style: normal;
+      background: linear-gradient(90deg, #74b3ff 0%, #ffffff 60%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-sub {
+      font-size: clamp(14px, 1.2vw, 17px);
+      font-weight: 400;
+      line-height: 1.75;
+      color: var(--text-muted);
+      max-width: 540px;
+      margin-bottom: 36px;
+      opacity: 0; animation: fadeUp 0.65s ease 0.36s forwards;
+    }
+
+    .hero-ctas {
+      display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+      opacity: 0; animation: fadeUp 0.65s ease 0.5s forwards;
+    }
+    .btn-primary {
+      padding: 13px 26px;
+      background: var(--blue); color: #fff;
+      border: none; border-radius: 8px;
+      font-family: inherit; font-size: 14px; font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(16,120,243,0.45);
+      transition: background 0.18s, transform 0.14s, box-shadow 0.18s;
+    }
+    .btn-primary:hover {
+      background: #1a8aff; transform: translateY(-1px);
+      box-shadow: 0 8px 28px rgba(16,120,243,0.6);
+    }
+    .btn-secondary {
+      padding: 13px 26px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px; color: rgba(255,255,255,0.8);
+      font-family: inherit; font-size: 14px; font-weight: 600;
+      cursor: pointer; backdrop-filter: blur(6px);
+      transition: border-color 0.18s, color 0.18s, transform 0.14s;
+    }
+    .btn-secondary:hover {
+      border-color: rgba(255,255,255,0.5); color: #fff;
+      transform: translateY(-1px);
+    }
+
+    @keyframes fadeUp {
+      from { opacity:0; transform:translateY(18px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+  </style>
+</head>
+<body>
+<section class="hero">
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="nav-logo">
+      <div class="nav-logo-mark">
+        <svg viewBox="0 0 16 16" fill="none">
+          <path d="M8 2L14 6V10L8 14L2 10V6L8 2Z" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      Varmeta
+    </div>
+    <ul class="nav-links">
+      <li><a href="#">About Us</a></li>
+      <li><a href="#">Services</a></li>
+      <li><a href="#">Our Solutions</a></li>
+      <li><a href="#">Portfolio</a></li>
+      <li><a href="#">Blog</a></li>
+      <li><a href="#">Careers</a></li>
+    </ul>
+    <button class="nav-cta">Consult Expert</button>
+  </nav>
+
+  <!-- Text Content -->
+  <div class="hero-content">
+    <div class="eyebrow"><span class="eyebrow-pip"></span>Premier AI &amp; Blockchain Consulting</div>
+    <h1 class="hero-h1">
+      Premier AI Consulting &amp;<br>
+      <em>Enterprise Blockchain Partner</em>
+    </h1>
+    <p class="hero-sub">
+      With Varmeta's expertise in Blockchain and AI consulting, you can deploy
+      high-performance architectures designed for rapid growth and
+      enterprise-grade resilience.
+    </p>
+    <div class="hero-ctas">
+      <button class="btn-primary">Schedule a Strategy Call</button>
+      <button class="btn-secondary">View Proven Portfolio</button>
+    </div>
+  </div>
+
+  <!-- Three.js isometric canvas -->
+  <canvas id="three-canvas"></canvas>
+  <div class="canvas-fade-top"></div>
+  <div class="canvas-fade-bottom"></div>
+
+</section>
+
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+
+const canvas = document.getElementById('three-canvas');
+
+function getSize() {
+  return { w: canvas.clientWidth, h: canvas.clientHeight };
+}
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x000000, 0);
+renderer.shadowMap.enabled = true;
+
+let { w, h } = getSize();
+renderer.setSize(w, h, false);
+
+// ── Isometric orthographic camera ──
+const FRUSTUM = 9;
+let aspect = w / h;
+const camera = new THREE.OrthographicCamera(
+  -FRUSTUM * aspect, FRUSTUM * aspect,
+   FRUSTUM, -FRUSTUM,
+   0.1, 100
+);
+// Classic isometric: rotate 45° around Y, then ~35.264° around X
+camera.position.set(12, 12, 12);
+camera.lookAt(0, 0, 0);
+
+const scene = new THREE.Scene();
+
+// ── Lighting ──
+scene.add(new THREE.AmbientLight(0x1a3a8a, 2.5));
+
+const keyLight = new THREE.DirectionalLight(0x4488ff, 4);
+keyLight.position.set(8, 14, 6);
+scene.add(keyLight);
+
+const fillLight = new THREE.DirectionalLight(0xffffff, 2);
+fillLight.position.set(-6, 8, -4);
+scene.add(fillLight);
+
+const rimLight = new THREE.PointLight(0x00aaff, 60, 30);
+rimLight.position.set(-10, 2, 8);
+scene.add(rimLight);
+
+// ── Node positions — spanning wide, low depth so they read as a band ──
+// Arranged in a loose network: two rows, staggered
+const nodePositions = [
+  [-9,  0,  1],
+  [-6,  0, -1],
+  [-3,  0,  1.5],
+  [ 0,  0, -0.5],
+  [ 3,  0,  1],
+  [ 6,  0, -1],
+  [ 9,  0,  1],
+  [-4.5, 0,  3.5],
+  [ 1.5, 0,  3],
+  [ 4.5, 0, -3],
+];
+
+// ── Edges (connections between nodes) ──
+const connections = [
+  [0,1],[1,2],[2,3],[3,4],[4,5],[5,6],  // main spine
+  [1,7],[2,7],[2,3],[3,8],[4,8],        // cross links
+  [4,9],[5,9],[3,4],
+];
+
+// Build cube meshes
+const BOX_SIZE = 1.3;
+const cubeGeo = new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE);
+
+const cubes = nodePositions.map((pos, i) => {
+  // Face material — glowing blue glass
+  const mat = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(0x0d2a8a),
+    emissive: new THREE.Color(0x0d4aee),
+    emissiveIntensity: 0.55,
+    metalness: 0.2,
+    roughness: 0.08,
+    transmission: 0.55,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.FrontSide,
+  });
+
+  const mesh = new THREE.Mesh(cubeGeo, mat);
+  mesh.position.set(...pos);
+  mesh.castShadow = true;
+
+  // Glowing edge wireframe
+  const edgeGeo = new THREE.EdgesGeometry(cubeGeo);
+  const edgeMat = new THREE.LineBasicMaterial({
+    color: 0x4fa3ff,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const edges = new THREE.LineSegments(edgeGeo, edgeMat);
+  mesh.add(edges);
+
+  // Inner glow — slightly smaller, pure emissive
+  const innerMat = new THREE.MeshBasicMaterial({
+    color: 0x1155ee,
+    transparent: true,
+    opacity: 0.25,
+    side: THREE.BackSide,
+  });
+  const innerMesh = new THREE.Mesh(cubeGeo, innerMat);
+  innerMesh.scale.setScalar(0.92);
+  mesh.add(innerMesh);
+
+  scene.add(mesh);
+  return { mesh, baseY: pos[1], phase: (i / nodePositions.length) * Math.PI * 2 };
+});
+
+// ── Glow sprites below each cube (ground halo) ──
+const glowTex = (() => {
+  const size = 64;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  const ctx = cv.getContext('2d');
+  const g = ctx.createRadialGradient(size/2,size/2,0, size/2,size/2,size/2);
+  g.addColorStop(0, 'rgba(30,100,255,0.7)');
+  g.addColorStop(0.4, 'rgba(10,60,200,0.3)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,size,size);
+  return new THREE.CanvasTexture(cv);
+})();
+
+nodePositions.forEach(pos => {
+  const spriteMat = new THREE.SpriteMaterial({
+    map: glowTex, transparent: true, opacity: 0.55,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.position.set(pos[0], pos[1] - 0.7, pos[2]);
+  sprite.scale.set(3.5, 1.2, 1);
+  scene.add(sprite);
+});
+
+// ── Connection lines ──
+const lineMat = new THREE.LineBasicMaterial({
+  color: 0x1a6aff,
+  transparent: true,
+  opacity: 0.55,
+});
+
+const lineObjects = connections.map(([a, b]) => {
+  const pts = [
+    new THREE.Vector3(...nodePositions[a]),
+    new THREE.Vector3(...nodePositions[b]),
+  ];
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const line = new THREE.Line(geo, lineMat.clone());
+  scene.add(line);
+  return line;
+});
+
+// ── Floor grid (faint) ──
+const gridHelper = new THREE.GridHelper(24, 24, 0x112255, 0x0a1835);
+gridHelper.position.y = -0.65;
+scene.add(gridHelper);
+
+// ── Resize ──
+function onResize() {
+  const { w, h } = getSize();
+  renderer.setSize(w, h, false);
+  aspect = w / h;
+  camera.left   = -FRUSTUM * aspect;
+  camera.right  =  FRUSTUM * aspect;
+  camera.top    =  FRUSTUM;
+  camera.bottom = -FRUSTUM;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', onResize);
+
+// ── Animate ──
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  // float cubes
+  cubes.forEach(({ mesh, baseY, phase }) => {
+    mesh.position.y = baseY + Math.sin(t * 0.65 + phase) * 0.18;
+  });
+
+  // pulse line opacity
+  lineObjects.forEach((l, i) => {
+    l.material.opacity = 0.35 + Math.sin(t * 1.1 + i * 0.7) * 0.2;
+  });
+
+  // very slow scene drift
+  scene.rotation.y = Math.sin(t * 0.07) * 0.04;
+
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>
