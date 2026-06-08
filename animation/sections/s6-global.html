@@ -1,0 +1,109 @@
+<style>
+  /* ── Building Global ──────────────────────────────────────────── */
+  .global {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 64px 32px 0;
+    gap: 48px;
+    background: var(--bg-primary);
+    overflow: hidden;
+  }
+  .global__inner {
+    position: relative;
+    max-width: 1280px; width: 100%;
+    display: flex; flex-direction: column; align-items: center; gap: 48px;
+  }
+  .global__header {
+    display: flex; flex-direction: column; align-items: center;
+    text-align: center; gap: 20px;
+    filter: drop-shadow(0 1px 1.5px rgba(10,13,18,0.1));
+  }
+  .global__title {
+    font-family: var(--font-display); font-weight: 600; font-size: 60px;
+    line-height: 72px; letter-spacing: -1.2px; color: var(--text-primary);
+  }
+  .global__subtitle {
+    font-size: 20px; line-height: 32px; color: var(--text-secondary);
+    max-width: 680px;
+  }
+
+  /* Stats row */
+  .global__stats {
+    display: flex; width: 100%; background: var(--bg-primary);
+    box-shadow: 0 1px 3px rgba(10,13,18,0.1);
+  }
+  .global__stat {
+    display: flex; flex-direction: column; align-items: center;
+    flex: 1; padding: 32px 48px; gap: 8px;
+    border-right: 1px solid var(--border);
+  }
+  .global__stat:last-child { border-right: none; }
+  .global__stat-value {
+    font-family: var(--font-display); font-weight: 600; font-size: 48px;
+    line-height: 60px; letter-spacing: -0.96px;
+    background-image: url('https://www.figma.com/api/mcp/asset/db6cc9d1-4074-4e16-ae74-b6bdf1c01b89');
+    background-clip: text; -webkit-background-clip: text; color: transparent;
+    background-size: cover; background-position: center;
+  }
+  .global__stat-label {
+    font-family: var(--font-display); font-size: 20px; line-height: 28px;
+    color: var(--text-secondary);
+  }
+
+  /* World map / globe image */
+  .global__map {
+    width: 900px; max-width: 100%;
+    position: relative;
+  }
+  .global__map::before {
+    content: '';
+    position: absolute;
+    inset: -30% -20%;
+    background: radial-gradient(ellipse, rgba(16,120,243,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .global__map img { width: 100%; display: block; }
+  .global__divider {
+    width: 100%; height: 1px; background: var(--border);
+    position: relative;
+  }
+</style>
+
+<section class="global">
+  <div class="global__inner">
+    <div class="global__header">
+      <h2 class="global__title">Building Global Partnerships<br>for Greater Impact</h2>
+      <p class="global__subtitle">
+        Our multilingual team works seamlessly across time zones, delivering excellence
+        for clients from Asia, Europe, and North America.
+      </p>
+    </div>
+
+    <div class="global__stats">
+      <div class="global__stat">
+        <div class="global__stat-value">100+</div>
+        <div class="global__stat-label">Fullstack Developers</div>
+      </div>
+      <div class="global__stat">
+        <div class="global__stat-value">$100M+</div>
+        <div class="global__stat-label">Customer Raised</div>
+      </div>
+      <div class="global__stat">
+        <div class="global__stat-value">10+</div>
+        <div class="global__stat-label">Countries Partnered</div>
+      </div>
+      <div class="global__stat">
+        <div class="global__stat-value">50+</div>
+        <div class="global__stat-label">Clients Served</div>
+      </div>
+    </div>
+
+    <div class="global__map">
+      <img src="https://www.figma.com/api/mcp/asset/1bf11316-e26c-4eb2-9634-e94ade1d814f"
+           alt="Varmeta global presence map">
+    </div>
+  </div>
+  <div class="global__divider"></div>
+</section>

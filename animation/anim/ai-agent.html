@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AI Agent — Architecture Flow</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html { width:100%; height:100%; background:rgba(255,255,255,0.01); }
+    body { width:100%; height:100%; overflow:hidden; background:transparent; }
+    canvas { display:block; width:100%; height:100%; background:transparent; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const VW = 900, VH = 500;
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const dpr    = window.devicePixelRatio || 1;
+let sx = 1, sy = 1;
+
+function resize() {
+  canvas.width  = canvas.clientWidth  * dpr;
+  canvas.height = canvas.clientHeight * dpr;
+  sx = canvas.width  / VW;
+  sy = canvas.height / VH;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Grid composition: master center, 3 left agents, 3 right agents ──
+// Paths fan left and right from center — never cross.
+// Straight bezier = no unnecessary curvature (hub-and-spoke guarantee).
+
+const CX = 450, CY = 250;
+const CENTER = { x: CX, y: CY, sz: 42, glow: 0, tgt: 0.3 };
+
+const NODES = [
+  { x: 155, y: 110, sz: 28, glow: 0, tgt: 0 }, // 0: left-top
+  { x: 155, y: 250, sz: 28, glow: 0, tgt: 0 }, // 1: left-mid
+  { x: 155, y: 390, sz: 28, glow: 0, tgt: 0 }, // 2: left-bottom
+  { x: 745, y: 110, sz: 28, glow: 0, tgt: 0 }, // 3: right-top
+  { x: 745, y: 250, sz: 28, glow: 0, tgt: 0 }, // 4: right-mid
+  { x: 745, y: 390, sz: 28, glow: 0, tgt: 0 }, // 5: right-bottom
+];
+
+function mkPath(a, b) {
+  return {
+    p0: [a.x, a.y],
+    p1: [a.x + (b.x - a.x) / 3,   a.y + (b.y - a.y) / 3],
+    p2: [a.x + (b.x - a.x) * 2/3, a.y + (b.y - a.y) * 2/3],
+    p3: [b.x, b.y]
+  };
+}
+function revPath(p) { return { p0: p.p3, p1: p.p2, p2: p.p1, p3: p.p0 }; }
+
+// PATHS[i]: node[i] → CENTER
+const PATHS = NODES.map(n => mkPath(n, CENTER));
+
+// ── Flow particle ──────────────────────────────────────────────────
+// ── SYNC SPEED ── ~2.9 s to traverse canvas at 60 fps
+// blockchain: SCROLL_PPS = 48 px/s, surge screen speed ≈ 70 px/s
+// data-flow:  PSPEED = 0.006/frame (slightly faster)
+const PSPEED = 0.0058;
+
+class Flow {
+  constructor(ni, dir) {
+    this.ni   = ni;
+    this.dir  = dir;   // 1 = node→center (incoming), -1 = center→node (outgoing)
+    this.t    = 0;
+    this.s    = PSPEED * (0.85 + Math.random() * 0.30);
+    this.done = false;
+    this.col  = '16,120,243';  // unified travel color across all animations
+    this.lw   = 3.2;
+    this.path = dir === 1 ? PATHS[ni] : revPath(PATHS[ni]);
+  }
+  tick() {
+    this.t += this.s;
+    if (this.t >= 1.15) this.done = true;
+  }
+  alpha() {
+    const t = this.t;
+    if (t < 0.07) return t / 0.07;
+    if (t > 0.85) return Math.max(0, (1 - t) / 0.15);
+    return 1;
+  }
+}
+
+// ── Conversation state machine ─────────────────────────────────────
+// Each conversation owns one path exclusively:
+//   INCOMING → node glows, flow travels node→master
+//   DIGESTING → master pulses, brief pause (master "thinks")
+//   OUTGOING → master→node, destination node glows on arrival
+// No two flows ever share the same path simultaneously.
+
+const DIGEST_MS  = 520;   // master think time
+const COOLDOWN_MS = 2000;  // before same node can be picked again
+const MAX_CONVOS  = 2;
+
+const busyPaths   = new Set();
+const nodeCooldown = new Array(NODES.length).fill(0);
+let conversations  = [];
+let lastSpawnTs    = -999;
+
+class Conversation {
+  constructor(ni) {
+    this.ni    = ni;
+    this.state = 'INCOMING';
+    this.flow  = new Flow(ni, 1);
+    this.timer = 0;
+    busyPaths.add(ni);
+  }
+
+  update(ts) {
+    if (this.state === 'INCOMING') {
+      this.flow.tick();
+      if (this.flow.done) {
+        this.state = 'DIGESTING';
+        this.timer = ts;
+        this.flow  = null;
+      }
+    } else if (this.state === 'DIGESTING') {
+      if (ts - this.timer >= DIGEST_MS) {
+        this.state = 'OUTGOING';
+        this.flow  = new Flow(this.ni, -1);
+      }
+    } else if (this.state === 'OUTGOING') {
+      this.flow.tick();
+      if (this.flow.done) {
+        busyPaths.delete(this.ni);
+        nodeCooldown[this.ni] = ts + COOLDOWN_MS;
+        return true; // done
+      }
+    }
+    return false;
+  }
+}
+
+function trySpawn(ts) {
+  if (conversations.length >= MAX_CONVOS) return;
+  if (ts - lastSpawnTs < 350 + Math.random() * 600) return;
+  const free = NODES
+    .map((_, i) => i)
+    .filter(i => !busyPaths.has(i) && ts >= nodeCooldown[i]);
+  if (free.length === 0) return;
+  const ni = free[Math.floor(Math.random() * free.length)];
+  conversations.push(new Conversation(ni));
+  lastSpawnTs = ts;
+}
+
+// ── Glow targets from active conversations ─────────────────────────
+function computeGlowTargets() {
+  NODES.forEach(n => { n.tgt = 0; });
+  CENTER.tgt = 0.28;
+
+  conversations.forEach(c => {
+    const ni = c.ni;
+    if (c.state === 'INCOMING' && c.flow) {
+      const a = c.flow.alpha(), t = Math.min(c.flow.t, 1);
+      NODES[ni].tgt = Math.max(NODES[ni].tgt, a * Math.max(0, 1 - t / 0.55));
+      CENTER.tgt    = Math.max(CENTER.tgt, 0.28 + a * Math.max(0, (t - 0.55) / 0.45) * 0.72);
+    } else if (c.state === 'DIGESTING') {
+      CENTER.tgt = Math.max(CENTER.tgt, 0.95);
+    } else if (c.state === 'OUTGOING' && c.flow) {
+      const a = c.flow.alpha(), t = Math.min(c.flow.t, 1);
+      CENTER.tgt    = Math.max(CENTER.tgt, 0.28 + a * Math.max(0, 1 - t / 0.55) * 0.55);
+      NODES[ni].tgt = Math.max(NODES[ni].tgt, a * Math.max(0, (t - 0.55) / 0.45));
+    }
+  });
+}
+
+// ── Draw base arc ──────────────────────────────────────────────────
+function drawBaseArc(path) {
+  const x0 = path.p0[0]*sx, y0 = path.p0[1]*sy;
+  const x1 = path.p3[0]*sx, y1 = path.p3[1]*sy;
+  const g = ctx.createLinearGradient(x0, y0, x1, y1);
+  g.addColorStop(0,    'rgba(210,220,226,0)');
+  g.addColorStop(0.08, 'rgba(210,220,226,0.42)');
+  g.addColorStop(0.92, 'rgba(210,220,226,0.42)');
+  g.addColorStop(1,    'rgba(210,220,226,0)');
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.bezierCurveTo(path.p1[0]*sx, path.p1[1]*sy,
+                    path.p2[0]*sx, path.p2[1]*sy, x1, y1);
+  ctx.strokeStyle = g;
+  ctx.lineWidth   = 1.2 * Math.min(sx, sy);
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ── Draw traveling glow — data-flow gradient window style ──────────
+function drawFlowGlow(flow) {
+  const path = flow.path;
+  const t    = flow.t;
+  const a    = flow.alpha();
+  if (a <= 0) return;
+
+  const x0 = path.p0[0]*sx, y0 = path.p0[1]*sy;
+  const x1 = path.p3[0]*sx, y1 = path.p3[1]*sy;
+  const start   = Math.max(0, t - 0.20);
+  const end     = Math.min(1, t + 0.20);
+  const opacity = (0.92 * a).toFixed(3);
+  const col     = flow.col;
+
+  const grad = ctx.createLinearGradient(x0, y0, x1, y1);
+  grad.addColorStop(0, `rgba(${col},0)`);
+  if (start > 0.001) grad.addColorStop(start, `rgba(${col},0)`);
+  grad.addColorStop(Math.min(t, 1), `rgba(${col},${opacity})`);
+  if (end < 0.999)   grad.addColorStop(end, `rgba(${col},0)`);
+  grad.addColorStop(1, `rgba(${col},0)`);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.bezierCurveTo(path.p1[0]*sx, path.p1[1]*sy,
+                    path.p2[0]*sx, path.p2[1]*sy, x1, y1);
+  ctx.strokeStyle = grad;
+  ctx.lineWidth   = flow.lw * Math.min(sx, sy);
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Design DNA: all node color transitions use continuous lerp — no threshold jumps.
+function lerpRGBA(r0,g0,b0,a0, r1,g1,b1,a1, t) {
+  return `rgba(${(r0+(r1-r0)*t+.5)|0},${(g0+(g1-g0)*t+.5)|0},${(b0+(b1-b0)*t+.5)|0},${(a0+(a1-a0)*t).toFixed(2)})`;
+}
+
+// ── Draw node ──────────────────────────────────────────────────────
+function drawNode(n, isCenter) {
+  const x  = n.x * sx, y = n.y * sy;
+  const sz = n.sz * Math.min(sx, sy);
+  const cr = sz * 0.25;
+  const gl = Math.max(0, n.glow);
+
+  // All colors interpolate continuously — no threshold pop
+  const fillCol = lerpRGBA(255,255,255,1.00, 230,244,255,0.90, gl);
+  const ic      = lerpRGBA(200,213,222,0.75,  16,120,243,1.00, gl);
+
+  ctx.save();
+
+  // Outer box
+  ctx.beginPath();
+  ctx.roundRect(x-sz, y-sz, sz*2, sz*2, cr);
+  ctx.fillStyle = fillCol;
+  ctx.fill();
+  {
+    const brd = ctx.createLinearGradient(x, y-sz, x, y+sz);
+    brd.addColorStop(0, lerpRGBA(200,213,222,0.60, 89,188,255,0.90, gl));
+    brd.addColorStop(1, lerpRGBA(200,213,222,0.60, 16,120,243,0.95, gl));
+    ctx.strokeStyle = brd;
+  }
+  ctx.lineWidth = (isCenter ? 1.6 : 1.2) * Math.min(sx, sy);
+  ctx.stroke();
+
+  // Inner ring
+  const ir = sz * 0.55;
+  ctx.beginPath();
+  ctx.roundRect(x-ir, y-ir, ir*2, ir*2, ir * 0.18);
+  {
+    const rng = ctx.createLinearGradient(x, y-ir, x, y+ir);
+    rng.addColorStop(0, lerpRGBA(200,213,222,0.55, 89,188,255,0.75, gl));
+    rng.addColorStop(1, lerpRGBA(200,213,222,0.55, 16,120,243,0.90, gl));
+    ctx.strokeStyle = rng;
+  }
+  ctx.lineWidth = 1.0 * Math.min(sx, sy);
+  ctx.stroke();
+
+  // Icon
+
+  if (isCenter) {
+    // Neural-net triangle mark
+    const u = sz * 0.30;
+    const pts = [[0,-u*1.05],[-u*0.92,u*0.60],[u*0.92,u*0.60]];
+    ctx.strokeStyle = ic; ctx.lineWidth = u*0.26; ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) for (let j = i+1; j < 3; j++) {
+      ctx.beginPath();
+      ctx.moveTo(x+pts[i][0], y+pts[i][1]);
+      ctx.lineTo(x+pts[j][0], y+pts[j][1]);
+      ctx.stroke();
+    }
+    ctx.fillStyle = ic;
+    pts.forEach(([px, py]) => { ctx.beginPath(); ctx.arc(x+px, y+py, u*0.26, 0, Math.PI*2); ctx.fill(); });
+  } else {
+    // Square dot — matches blockchain node style
+    const dr = sz * 0.22;
+    ctx.beginPath();
+    ctx.rect(x - dr, y - dr, dr * 2, dr * 2);
+    ctx.fillStyle = ic; ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// ── Pulse ring around master ───────────────────────────────────────
+let pulseOffset = 0;
+
+function drawPulse(glow) {
+  const x = CX*sx, y = CY*sy;
+  const sz = CENTER.sz * Math.min(sx, sy);
+  for (let i = 0; i < 2; i++) {
+    const raw = (pulseOffset + i*0.5) % 1;
+    const r   = sz * (1.35 + raw*2.8);
+    const a   = (1-raw) * 0.13 * (0.35 + glow*0.65);
+    ctx.save();
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+    ctx.strokeStyle = `rgba(16,120,243,${a})`;
+    ctx.lineWidth   = 1.4 * Math.min(sx, sy);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ── Main loop ──────────────────────────────────────────────────────
+let prevTs = null;
+
+function frame(ts) {
+  const dt = prevTs ? Math.min(ts-prevTs, 50) : 16;
+  prevTs = ts;
+
+  pulseOffset = (pulseOffset + dt*0.00028) % 1;
+
+  trySpawn(ts);
+  conversations = conversations.filter(c => !c.update(ts));
+
+  computeGlowTargets();
+  const k = 1 - Math.pow(0.018, dt/1000);
+  NODES.forEach(n => { n.glow += (n.tgt-n.glow)*k; });
+  CENTER.glow += (CENTER.tgt-CENTER.glow)*k;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  PATHS.forEach(p => drawBaseArc(p));
+  drawPulse(CENTER.glow);
+  conversations.forEach(c => { if (c.flow) drawFlowGlow(c.flow); });
+  NODES.forEach(n => drawNode(n, false));
+  drawNode(CENTER, true);
+
+  requestAnimationFrame(frame);
+}
+
+// Seed one conversation immediately
+conversations.push(new Conversation(Math.floor(Math.random() * NODES.length)));
+lastSpawnTs = 0;
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

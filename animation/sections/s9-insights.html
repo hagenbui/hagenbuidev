@@ -1,0 +1,168 @@
+<style>
+  /* ── Industry Insights ────────────────────────────────────────── */
+  .insights {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 64px 32px;
+    gap: 48px;
+    background: var(--bg-primary);
+    overflow: hidden;
+  }
+  .insights__grid-bg {
+    position: absolute; inset: 0; pointer-events: none;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 128px 128px;
+    -webkit-mask-image: radial-gradient(ellipse 90% 90% at 50% 50%, black 20%, transparent 80%);
+    mask-image: radial-gradient(ellipse 90% 90% at 50% 50%, black 20%, transparent 80%);
+    opacity: 0.35;
+  }
+  .insights__glow {
+    position: absolute;
+    width: 600px; height: 600px;
+    right: -100px; top: -100px;
+    background: radial-gradient(ellipse, rgba(16,120,243,0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .insights__inner {
+    position: relative;
+    max-width: 1280px; width: 100%;
+    display: flex; flex-direction: column; gap: 48px;
+  }
+  .insights__header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 32px;
+  }
+  .insights__heading-img { height: 72px; width: auto; }
+  .insights__view-all {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--brand); font-weight: 500; font-size: 16px;
+    white-space: nowrap; cursor: pointer; padding-bottom: 8px;
+    transition: gap 150ms ease;
+  }
+  .insights__view-all:hover { gap: 12px; }
+  .insights__view-all::after { content: '→'; }
+
+  .insights__cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+  .insight-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    overflow: hidden;
+    background: #fff;
+    display: flex; flex-direction: column;
+    transition: box-shadow 200ms ease, transform 200ms ease;
+    cursor: pointer;
+  }
+  .insight-card:hover {
+    box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+    transform: translateY(-2px);
+  }
+  .insight-card__img {
+    width: 100%; height: 220px; object-fit: cover;
+  }
+  .insight-card__body {
+    padding: 24px; display: flex; flex-direction: column; gap: 12px; flex: 1;
+  }
+  .insight-card__meta {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .insight-card__tag {
+    display: inline-flex; align-items: center;
+    padding: 4px 12px; background: #eef8ff; color: var(--brand);
+    border-radius: 100px; font-size: 12px; font-weight: 500;
+  }
+  .insight-card__date { font-size: 13px; color: var(--text-secondary); }
+  .insight-card__title {
+    font-family: var(--font-display); font-weight: 600; font-size: 20px;
+    line-height: 28px; color: var(--text-primary);
+  }
+  .insight-card__desc {
+    font-size: 15px; line-height: 24px; color: var(--text-secondary); flex: 1;
+  }
+  .insight-card__link {
+    display: flex; align-items: center; gap: 6px;
+    color: var(--brand); font-size: 14px; font-weight: 500;
+    padding-top: 16px; border-top: 1px solid var(--border);
+    transition: gap 150ms ease;
+  }
+  .insight-card__link:hover { gap: 10px; }
+  .insight-card__link::after { content: '→'; }
+</style>
+
+<section class="insights">
+  <div class="insights__grid-bg" aria-hidden="true"></div>
+  <div class="insights__glow" aria-hidden="true"></div>
+  <div class="insights__inner">
+
+    <div class="insights__header">
+      <img class="insights__heading-img"
+           src="https://www.figma.com/api/mcp/asset/49b006ac-b219-4f51-9d99-23b69c65b6b6"
+           alt="Industry Insights &amp; Tech Trends">
+      <a href="#" class="insights__view-all">View all articles</a>
+    </div>
+
+    <div class="insights__cards">
+      <article class="insight-card">
+        <img class="insight-card__img"
+             src="https://www.figma.com/api/mcp/asset/b802dfc8-e382-46a0-9ab9-37cae8f9df81"
+             alt="AI in Enterprise">
+        <div class="insight-card__body">
+          <div class="insight-card__meta">
+            <span class="insight-card__tag">AI / ML</span>
+            <span class="insight-card__date">May 2026</span>
+          </div>
+          <div class="insight-card__title">How Agentic AI Is Reshaping Enterprise Operations in 2026</div>
+          <div class="insight-card__desc">
+            From autonomous agents to multi-modal reasoning, we break down what enterprise leaders actually need to know before their next budget cycle.
+          </div>
+          <a href="#" class="insight-card__link">Read article</a>
+        </div>
+      </article>
+
+      <article class="insight-card">
+        <img class="insight-card__img"
+             src="https://www.figma.com/api/mcp/asset/f6cd9cbc-9e37-4977-b38f-b29b4937ff08"
+             alt="Blockchain Tokenization">
+        <div class="insight-card__body">
+          <div class="insight-card__meta">
+            <span class="insight-card__tag">Blockchain</span>
+            <span class="insight-card__date">Apr 2026</span>
+          </div>
+          <div class="insight-card__title">Real-World Asset Tokenization: The $16T Opportunity</div>
+          <div class="insight-card__desc">
+            Tokenization is moving beyond crypto-native assets. We explore the regulatory landscape, tech stack requirements, and early movers already capturing market share.
+          </div>
+          <a href="#" class="insight-card__link">Read article</a>
+        </div>
+      </article>
+
+      <article class="insight-card">
+        <img class="insight-card__img"
+             src="https://www.figma.com/api/mcp/asset/a597c758-f535-4c47-91ea-d9044c060840"
+             alt="Spatial Computing">
+        <div class="insight-card__body">
+          <div class="insight-card__meta">
+            <span class="insight-card__tag">VR / AR</span>
+            <span class="insight-card__date">Mar 2026</span>
+          </div>
+          <div class="insight-card__title">Spatial Computing for Training: Why Enterprises Are Switching from Video</div>
+          <div class="insight-card__desc">
+            Hands-on spatial simulations are delivering 40-60% faster knowledge retention. Here's the architecture behind the leading platforms and how to evaluate vendors.
+          </div>
+          <a href="#" class="insight-card__link">Read article</a>
+        </div>
+      </article>
+    </div>
+
+  </div>
+</section>

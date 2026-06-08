@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Data — Arc Animation</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html {
+      width: 100%;
+      height: 100%;
+      background-color: rgba(255, 255, 255, 0.01); /* Workaround for Chromium iframe blending/transparency bug */
+    }
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+    }
+    canvas { display:block; width:100%; height:100%; background: transparent; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+// ── Coordinate space matches Figma frame 40011678:18924 (946 × 736) ──
+const VW = 946, VH = 736;
+
+// Viewport pan: shift the camera so arcs enter at center-left (~1/3 from top)
+// rather than near the very top. VIEW_OFFSET_Y is subtracted from world-y
+// when converting screen → world for mouse, and added back at render time.
+// VH_VIS is the visible bottom in world space.
+const VIEW_OFFSET_Y = 220;
+const VH_VIS = VH - VIEW_OFFSET_Y; // = 516
+
+// Single cubic bezier per arc — smooth throughout, no kink.
+// P0 = entry (left edge), P1 = long horizontal ctrl, P2 = convergence zone, P3 = exit (lower-right)
+const N_ARCS    = 20;
+const ENTRY_Y0  = -175;   // top arc entry  (≈ 6% screen height)
+const ENTRY_Y1  =  400;   // bottom arc entry (≈ 85% screen height)
+const P1X       =  420;   // ctrl-1 x — long horizontal start before bending
+const PINCH_X   =  620;   // convergence x ≈ 66% canvas width
+const PINCH_YC  =  200;   // convergence center y ≈ 57% screen height
+const PINCH_SPR =    5;   // y-gap between arcs at convergence (tight, 95 units total)
+const EXIT_X    =  920;   // exit near right edge
+const EXIT_YC   =  320;   // exit center — well below convergence (downward bias)
+const EXIT_SPR  =   16;   // y-gap at exit (304 units total — medium)
+
+// ── Physics ───────────────────────────────────────────────────────
+const N      = 52;
+const K_TENS = 0.055;
+const K_REST = 0.002;
+const DAMP   = 0.84;   // heavier material — oscillations die fast
+const CUR_R  = 195; // Increased by 50% for a wider, smoother hover deformation area (originally 130)
+const CUR_F  = 1.5; // Enhanced for a very strong, responsive bend effect (originally 0.43)
+
+// Reset mode (cursor left canvas) - match natural physics for organic settling
+const DAMP_RESET  = 0.84;   // natural damping
+const K_REST_RESET = 0.002;  // natural pull back (no aggressive snap)
+
+// ── Build rest positions ──────────────────────────────────────────
+function mkNode(x, y){ return {x, y, vx:0, vy:0, rx:x, ry:y}; }
+
+const arcs = Array.from({length: N_ARCS}, (_, ai) => {
+  const frac   = ai / (N_ARCS - 1);
+  const entryY = ENTRY_Y0 + frac * (ENTRY_Y1 - ENTRY_Y0);
+  const offset = ai - (N_ARCS - 1) / 2;
+  const pinchY = PINCH_YC + offset * PINCH_SPR;
+  const exitY  = EXIT_YC  + offset * EXIT_SPR;
+
+  // Cubic bezier: P0=(0,entryY) P1=(P1X,entryY) P2=(PINCH_X,pinchY) P3=(EXIT_X,exitY)
+  // P0→P1 horizontal = long flat start; P2 tight = convergence; P3 lower-right = medium exit
+  return Array.from({length: N}, (_, k) => {
+    const t = k / (N - 1), mt = 1 - t;
+    return mkNode(
+      mt*mt*mt*0      + 3*mt*mt*t*P1X    + 3*mt*t*t*PINCH_X + t*t*t*EXIT_X,
+      mt*mt*mt*entryY + 3*mt*mt*t*entryY + 3*mt*t*t*pinchY  + t*t*t*exitY
+    );
+  });
+});
+
+// ── Canvas ────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const dpr    = window.devicePixelRatio || 1;
+let   sx = 1, sy = 1;   // scale: logical → canvas pixels
+
+function resize(){
+  canvas.width  = canvas.clientWidth  * dpr;
+  canvas.height = canvas.clientHeight * dpr;
+  sx = canvas.width  / VW;
+  sy = canvas.height / VH;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Mouse (in logical VW×VH space) ───────────────────────────────
+let mx = -9999, my = -9999, resetting = false;
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  mx = (e.clientX - r.left) * dpr / sx;
+  my = (e.clientY - r.top)  * dpr / sy - VIEW_OFFSET_Y; // world y
+  resetting = false;
+});
+canvas.addEventListener('mouseleave', () => { mx = -9999; my = -9999; resetting = true; });
+
+// ── Physics constants ─────────────────────────────────────────────
+const MAX_DEF = 26;   // Increased to allow deep, satisfying bending (originally 9)
+const MAX_V   = 2.2;  // Increased to allow natural, faster deflection velocities (originally 0.9)
+
+// ── Physics step ──────────────────────────────────────────────────
+function step(){
+  const damp = resetting ? DAMP_RESET  : DAMP;
+  const kr   = resetting ? K_REST_RESET : K_REST;
+
+  let settled = true;
+
+  for(const nodes of arcs){
+    for(let i = 1; i < nodes.length-1; i++){
+      const n = nodes[i], l = nodes[i-1], r = nodes[i+1];
+
+      const defX = n.x - n.rx, defY = n.y - n.ry;
+      const def  = Math.hypot(defX, defY);
+      if(def > 0.08) settled = false;
+
+      // Non-linear rest spring — stiffens near the ceiling
+      const stiffness = kr + (def > MAX_DEF*0.5 ? (def - MAX_DEF*0.5)*0.06 : 0);
+
+      let fx = (l.x + r.x - 2*n.x)*K_TENS - defX*stiffness;
+      let fy = (l.y + r.y - 2*n.y)*K_TENS - defY*stiffness;
+
+      // Breeze force — only while cursor is on canvas
+      if(!resetting){
+        const dx = n.x - mx, dy = n.y - my, d = Math.hypot(dx, dy);
+        if(d < CUR_R && d > 0.5){
+          const headroom = Math.max(0, 1 - def/MAX_DEF);
+          const s = (1 - d/CUR_R)**3 * CUR_F * headroom;
+          fx += dx/d * s;
+          fy += dy/d * s;
+        }
+      }
+
+      n.vx = (n.vx + fx)*damp;
+      n.vy = (n.vy + fy)*damp;
+
+      const v = Math.hypot(n.vx, n.vy);
+      if(v > MAX_V){ n.vx = n.vx/v*MAX_V; n.vy = n.vy/v*MAX_V; }
+
+      n.x += n.vx;
+      n.y += n.vy;
+
+      // Hard ceiling
+      const newDef = Math.hypot(n.x - n.rx, n.y - n.ry);
+      if(newDef > MAX_DEF){
+        const sc = MAX_DEF / newDef;
+        n.x = n.rx + (n.x - n.rx)*sc;
+        n.y = n.ry + (n.y - n.ry)*sc;
+        const dot = n.vx*(n.x-n.rx) + n.vy*(n.y-n.ry);
+        if(dot > 0){ n.vx *= 0.3; n.vy *= 0.3; }
+      }
+    }
+  }
+
+  if(resetting && settled) resetting = false;
+}
+
+// ── Deformation energy (drives subtle brightness) ─────────────────
+function energy(nodes){
+  let e = 0;
+  for(const n of nodes) e = Math.max(e, Math.hypot(n.x - n.rx, n.y - n.ry));
+  return Math.min(e / 8, 1);   // saturates at 8 SVG-unit deflection
+}
+
+// ── Render ────────────────────────────────────────────────────────
+// arcIdx 0..N_ARCS-1 — middle arcs (near N_ARCS/2) get thicker strokes and higher opacity
+function renderArc(nodes, arcIdx){
+  const e    = energy(nodes);
+  const x0   = nodes[0].x * sx,              y0 = nodes[0].y * sy;
+  const x1   = nodes[nodes.length-1].x * sx, y1 = nodes[nodes.length-1].y * sy;
+
+  // Prominence: bell curve peaking at the middle arc
+  const mid  = (N_ARCS - 1) / 2;
+  const dist = Math.abs(arcIdx - mid) / mid;        // 0 = middle, 1 = edge
+  const prom = 1 - dist * dist;                      // 1 at center, 0 at edges
+
+  // Default lines are a very soft, subtle light gray
+  // e: physics deflection makes them slightly darker/more visible
+  const rc  = (210 + (165 - 210) * e) | 0;
+  const gc  = (220 + (175 - 220) * e) | 0;
+  const bc  = (226 + (182 - 226) * e) | 0;
+  const col = `${rc},${gc},${bc}`;
+  const peak = (0.26 + prom * 0.16 + e * 0.15).toFixed(2);
+
+  const grad = ctx.createLinearGradient(x0, y0, x1, y1);
+  grad.addColorStop(0,    `rgba(${col},0)`);
+  grad.addColorStop(0.07, `rgba(${col},${peak})`);
+  grad.addColorStop(0.85, `rgba(${col},${peak})`);
+  grad.addColorStop(1,    `rgba(${col},0)`);
+
+  ctx.save();
+  ctx.strokeStyle = grad;
+  ctx.lineWidth   = 1.2 * Math.min(sx, sy);
+  ctx.lineCap     = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  for(let i = 1; i < nodes.length - 1; i++){
+    const mx2 = (nodes[i].x + nodes[i+1].x) / 2 * sx;
+    const my2 = (nodes[i].y + nodes[i+1].y) / 2 * sy;
+    ctx.quadraticCurveTo(nodes[i].x * sx, nodes[i].y * sy, mx2, my2);
+  }
+  ctx.lineTo(x1, y1);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Draw a moving gradient highlight along the active flow path
+function drawFlow(nodes, t, arcIdx){
+  const x0   = nodes[0].x * sx,              y0 = nodes[0].y * sy;
+  const x1   = nodes[nodes.length-1].x * sx, y1 = nodes[nodes.length-1].y * sy;
+
+  const mid  = (N_ARCS - 1) / 2;
+  const dist = Math.abs(arcIdx - mid) / mid;
+  const prom = 1 - dist * dist;
+
+  const col = '16,120,243';  // unified travel color: #1078f3
+  const start = Math.max(0, t - 0.20);
+  const peak  = Math.max(0, Math.min(1, t));
+  const end   = Math.min(1, t + 0.20);
+
+  // Apply edge feather mask (fades out active flow as it nears left/right bounds)
+  let edgeFade = 1;
+  if (t < 0.07) {
+    edgeFade = Math.max(0, t / 0.07);
+  } else if (t > 0.85) {
+    edgeFade = Math.max(0, (1.0 - t) / 0.15);
+  }
+
+  const opacity = 0.92 * edgeFade;
+
+  const grad = ctx.createLinearGradient(x0, y0, x1, y1);
+  grad.addColorStop(0, `rgba(${col},0)`);
+  if (start > 0) grad.addColorStop(start, `rgba(${col},0)`);
+  grad.addColorStop(peak, `rgba(${col},${opacity})`);
+  if (end < 1) grad.addColorStop(end, `rgba(${col},0)`);
+  grad.addColorStop(1, `rgba(${col},0)`);
+
+  ctx.save();
+  ctx.strokeStyle = grad;
+  ctx.lineWidth   = 3.2 * Math.min(sx, sy);
+  ctx.lineCap     = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  for(let i = 1; i < nodes.length - 1; i++){
+    const mx2 = (nodes[i].x + nodes[i+1].x) / 2 * sx;
+    const my2 = (nodes[i].y + nodes[i+1].y) / 2 * sy;
+    ctx.quadraticCurveTo(nodes[i].x * sx, nodes[i].y * sy, mx2, my2);
+  }
+  ctx.lineTo(x1, y1);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ── SYNC SPEED ── ~2.8 s to traverse canvas at 60 fps
+// blockchain: SCROLL_PPS = 48 px/s, surge screen speed ≈ 70 px/s
+// ai-agent:   PSPEED = 0.0058/frame (slightly slower)
+const PSPEED = 0.006;
+let parts = [];
+
+// ── Wire nodes on strings ─────────────────────────────────────────
+// arc: single arc index. t: position along arc (0=entry, 1=exit).
+// 6 arcs spread evenly top→bottom, 1 node each near midpoint (staggered).
+const WIRE_NODES = [
+  { arc: 1,  t: 0.43 },
+  { arc: 4,  t: 0.50 },
+  { arc: 8,  t: 0.46 },
+  { arc: 11, t: 0.52 },
+  { arc: 15, t: 0.44 },
+  { arc: 18, t: 0.49 },
+];
+WIRE_NODES.forEach(wn => { wn.glow = 0; });
+
+function getPosOnArc(ai, t) {
+  const nodes = arcs[ai];
+  const f = Math.max(0, Math.min(N - 2, t * (N - 1)));
+  const i = Math.floor(f);
+  const r = f - i;
+  return {
+    x: nodes[i].x * (1 - r) + nodes[i + 1].x * r,
+    y: nodes[i].y * (1 - r) + nodes[i + 1].y * r
+  };
+}
+
+// Design DNA: all node color transitions use continuous lerp — no threshold jumps.
+function lerpRGBA(r0,g0,b0,a0, r1,g1,b1,a1, t) {
+  return `rgba(${(r0+(r1-r0)*t+.5)|0},${(g0+(g1-g0)*t+.5)|0},${(b0+(b1-b0)*t+.5)|0},${(a0+(a1-a0)*t).toFixed(2)})`;
+}
+
+function drawWireNode(wx, wy, gl) {
+  const x  = wx * sx;
+  const y  = wy * sy;
+  const sc = Math.min(sx, sy);
+  const HSZ = 22 * sc;   // ≥ 75% of ai-agent node size
+  const CR  = 4.0 * sc;
+  const IR  = 11 * sc;
+  const CRI = 2.0 * sc;
+  const DR  = 5.0 * sc;
+
+  // All colors interpolate continuously — no threshold pop
+  const fillCol = lerpRGBA(255,255,255,1.00, 230,244,255,0.90, gl);
+  const brdCol  = lerpRGBA(200,213,222,0.60,  16,120,243,1.00, gl);
+  const ringCol = lerpRGBA(200,213,222,0.55,  16,120,243,0.85, gl);
+  const dotCol  = lerpRGBA(200,213,222,0.72,  16,120,243,1.00, gl);
+
+  ctx.save();
+
+  ctx.beginPath();
+  ctx.roundRect(x - HSZ, y - HSZ, HSZ * 2, HSZ * 2, CR);
+  ctx.fillStyle   = fillCol;
+  ctx.fill();
+  ctx.strokeStyle = brdCol;
+  ctx.lineWidth   = 1.2 * sc;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.roundRect(x - IR, y - IR, IR * 2, IR * 2, CRI);
+  ctx.strokeStyle = ringCol;
+  ctx.lineWidth   = 1.0 * sc;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.rect(x - DR, y - DR, DR * 2, DR * 2);
+  ctx.fillStyle = dotCol;
+  ctx.fill();
+
+  ctx.restore();
+}
+
+class P {
+  constructor(ai, t=0, dir=1){ 
+    this.ai=ai; 
+    this.t=t; 
+    this.dir=dir; 
+    this.s=PSPEED*(0.8+Math.random()*0.4); 
+    this.dead=false; 
+  }
+  pos(){
+    const n=arcs[this.ai], f=Math.max(0, Math.min(N-2, this.t*(N-1))), i=Math.min(0|f,N-2), r=f-i;
+    return {x:n[i].x*(1-r)+n[i+1].x*r, y:n[i].y*(1-r)+n[i+1].y*r};
+  }
+  tick(){ 
+    this.t += this.s * this.dir; 
+    if(this.dir === 1 && this.t >= 1.2) this.dead = true;
+    if(this.dir === -1 && this.t <= -0.2) this.dead = true;
+  }
+}
+
+// Seed a few arcs at staggered positions
+[0, 5, 10, 15, 19].forEach(ai => parts.push(new P(ai, 0.15 + ai * 0.04, 1)));
+let lastSpawn = 0;
+let prevTs = 0;
+const hoverTriggered = Array(N_ARCS).fill(false);
+
+function frame(ts){
+  const dt = prevTs > 0 ? Math.min(ts - prevTs, 50) : 16;
+  prevTs = ts;
+  step();
+
+  // Interactive Hover Trigger logic: Trigger flows on the nearest 3 arcs
+  if (resetting) {
+    hoverTriggered.fill(false);
+  } else if (mx > -1000) {
+    const arcDistances = arcs.map((nodes, idx) => {
+      let minDist = Infinity;
+      for (let i = 0; i < nodes.length; i += 3) {
+        const d = Math.hypot(nodes[i].x - mx, nodes[i].y - my);
+        if (d < minDist) minDist = d;
+      }
+      return { idx, dist: minDist };
+    });
+
+    arcDistances.sort((a, b) => a.dist - b.dist);
+
+    // Trigger the nearest 2-3 arcs if they are in range and not triggered yet
+    for (let i = 0; i < 3; i++) {
+      const item = arcDistances[i];
+      if (item && item.dist < 80) { // proximity trigger range
+        if (!hoverTriggered[item.idx]) {
+          // Calculate current progress (0 to 1) horizontally along the path based on cursor mx
+          const tStart = Math.min(1.0, Math.max(0.0, mx / EXIT_X));
+          
+          // Trigger a bidirectional split flow
+          parts.push(new P(item.idx, tStart, 1));  // Moves right
+          parts.push(new P(item.idx, tStart, -1)); // Moves left
+          
+          hoverTriggered[item.idx] = true;
+        }
+      }
+    }
+
+    // Reset trigger state for arcs that are now far away
+    arcDistances.forEach(item => {
+      if (item.dist > 150) { // reset threshold
+        hoverTriggered[item.idx] = false;
+      }
+    });
+  }
+
+  parts.forEach(p => p.tick());
+  parts = parts.filter(p => !p.dead);
+  
+  // Maintain 3-4 active flows with natural, aesthetic spacing
+  if(parts.length < 4){
+    if(ts - lastSpawn > 400 + Math.random() * 800){ // min spacing to keep it looking paced
+      const activeArcs = new Set(parts.map(p => p.ai));
+      const availableArcs = Array.from({length: N_ARCS}, (_, i) => i).filter(i => !activeArcs.has(i));
+      const nextArc = availableArcs.length > 0
+        ? availableArcs[Math.floor(Math.random() * availableArcs.length)]
+        : Math.floor(Math.random() * N_ARCS);
+      
+      parts.push(new P(nextArc, 0, 1)); // Start at left, move right
+      lastSpawn = ts;
+    }
+  }
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Shift all rendering down by VIEW_OFFSET_Y logical units
+  // so arcs appear to enter from center-left instead of near the top.
+  ctx.save();
+  ctx.translate(0, VIEW_OFFSET_Y * sy);
+
+  // 1. Draw base neutral arcs
+  arcs.forEach((a, i) => renderArc(a, i));
+
+  // 2. Draw moving gradient highlight flows
+  for(const p of parts){
+    drawFlow(arcs[p.ai], p.t, p.ai);
+  }
+
+  // 3. Update wire node glow — fast rise, slow fall for smooth pulse feel
+  const kRise = 1 - Math.pow(0.003, dt / 1000);
+  const kFall = 1 - Math.pow(0.030, dt / 1000);
+  for (const wn of WIRE_NODES) {
+    let tgt = 0;
+    for (const p of parts) {
+      if (p.ai === wn.arc) {
+        const d = Math.abs(p.t - wn.t);
+        if (d < 0.12) tgt = Math.max(tgt, 1 - d / 0.12);
+      }
+    }
+    wn.glow += (tgt - wn.glow) * (tgt > wn.glow ? kRise : kFall);
+  }
+
+  // 4. Draw wire nodes on top of arcs
+  for (const wn of WIRE_NODES) {
+    const pos = getPosOnArc(wn.arc, wn.t);
+    drawWireNode(pos.x, pos.y, wn.glow);
+  }
+
+  ctx.restore(); // end viewport pan
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(ts => { lastSpawn = ts; frame(ts); });
+</script>
+</body>
+</html>

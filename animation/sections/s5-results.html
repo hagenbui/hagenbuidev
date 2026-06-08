@@ -1,0 +1,191 @@
+<style>
+  /* ── Real Results ─────────────────────────────────────────────── */
+  .results {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 64px 32px;
+    gap: 48px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-primary);
+    overflow: hidden;
+  }
+  .results__grid-bg {
+    position: absolute; inset: 0 0 -1px 0; pointer-events: none;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 128px 128px;
+    -webkit-mask-image: radial-gradient(ellipse 90% 90% at 50% 100%, black 20%, transparent 70%);
+    mask-image: radial-gradient(ellipse 90% 90% at 50% 100%, black 20%, transparent 70%);
+    opacity: 0.4;
+  }
+  .results__inner {
+    position: relative;
+    max-width: 1280px; width: 100%;
+    display: flex; flex-direction: column; gap: 48px;
+  }
+  .results__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 32px;
+  }
+  .results__heading-img { height: 72px; width: auto; }
+  .results__header-text {
+    font-size: 18px; line-height: 28px; color: var(--text-secondary);
+    max-width: 480px; padding-top: 8px;
+  }
+
+  /* Stats row */
+  .results__stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+    background: #fff;
+  }
+  .results__stat {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 32px 48px; gap: 8px;
+    border-right: 1px solid var(--border);
+  }
+  .results__stat:last-child { border-right: none; }
+  .results__stat-value {
+    font-family: var(--font-display); font-weight: 700; font-size: 48px;
+    line-height: 60px; letter-spacing: -0.96px;
+    background: linear-gradient(135deg, var(--brand) 0%, #59bcff 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .results__stat-label {
+    font-family: var(--font-display); font-size: 16px; line-height: 24px;
+    color: var(--text-secondary); text-align: center;
+  }
+
+  /* Case study cards grid */
+  .results__cases {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+  .results__case {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    overflow: hidden;
+    background: #fff;
+    display: flex; flex-direction: column;
+    transition: box-shadow 200ms ease;
+  }
+  .results__case:hover { box-shadow: 0 8px 32px rgba(0,0,0,0.08); }
+  .results__case-img {
+    width: 100%; height: 200px; object-fit: cover;
+  }
+  .results__case-body { padding: 24px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+  .results__case-tag {
+    display: inline-flex; align-items: center;
+    padding: 4px 12px; background: #eef8ff; color: var(--brand);
+    border-radius: 100px; font-size: 13px; font-weight: 500; width: fit-content;
+  }
+  .results__case-title {
+    font-family: var(--font-display); font-weight: 600; font-size: 20px;
+    line-height: 28px; color: var(--text-primary);
+  }
+  .results__case-desc {
+    font-size: 15px; line-height: 24px; color: var(--text-secondary); flex: 1;
+  }
+  .results__case-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-top: 16px; border-top: 1px solid var(--border);
+    font-size: 14px; color: var(--text-secondary);
+  }
+  .results__case-link {
+    color: var(--brand); font-weight: 500; font-size: 14px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .results__case-link::after { content: '→'; }
+</style>
+
+<section class="results">
+  <div class="results__grid-bg" aria-hidden="true"></div>
+  <div class="results__inner">
+
+    <div class="results__header">
+      <img class="results__heading-img"
+           src="https://www.figma.com/api/mcp/asset/16869cbd-b5f2-4039-83e8-2eebd419fc90"
+           alt="Real Results, Proven Impact">
+      <p class="results__header-text">
+        From startups raising their first round to publicly listed enterprises deploying
+        production-grade infrastructure — our track record speaks for itself.
+      </p>
+    </div>
+
+    <div class="results__stats">
+      <div class="results__stat">
+        <div class="results__stat-value">50+</div>
+        <div class="results__stat-label">Clients Worldwide</div>
+      </div>
+      <div class="results__stat">
+        <div class="results__stat-value">$100M+</div>
+        <div class="results__stat-label">Customer Funding Raised</div>
+      </div>
+      <div class="results__stat">
+        <div class="results__stat-value">98%</div>
+        <div class="results__stat-label">On-Time Delivery Rate</div>
+      </div>
+      <div class="results__stat">
+        <div class="results__stat-value">10+</div>
+        <div class="results__stat-label">Countries Partnered</div>
+      </div>
+    </div>
+
+    <div class="results__cases">
+      <div class="results__case">
+        <img class="results__case-img"
+             src="https://www.figma.com/api/mcp/asset/0a948106-a5c7-416a-ace0-2a01d6be34ef"
+             alt="Case study 1">
+        <div class="results__case-body">
+          <span class="results__case-tag">Blockchain</span>
+          <div class="results__case-title">Enterprise DeFi Protocol — $40M TVL in 90 Days</div>
+          <div class="results__case-desc">Designed and deployed a multi-chain liquidity protocol with custom smart contracts and real-time analytics dashboard.</div>
+          <div class="results__case-footer">
+            <span>2024</span>
+            <a href="#" class="results__case-link">Read case</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="results__case">
+        <img class="results__case-img"
+             src="https://www.figma.com/api/mcp/asset/bfed24b8-fdb9-4555-865f-575f9ed92e5c"
+             alt="Case study 2">
+        <div class="results__case-body">
+          <span class="results__case-tag">AI / Data</span>
+          <div class="results__case-title">AI-Powered Risk Engine for Fintech Platform</div>
+          <div class="results__case-desc">Built an ML pipeline processing 2M+ transactions daily with &lt;50ms inference latency and 99.4% fraud detection accuracy.</div>
+          <div class="results__case-footer">
+            <span>2024</span>
+            <a href="#" class="results__case-link">Read case</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="results__case">
+        <img class="results__case-img"
+             src="https://www.figma.com/api/mcp/asset/15f1d116-f99d-4a4f-83bf-48f1c3e96c00"
+             alt="Case study 3">
+        <div class="results__case-body">
+          <span class="results__case-tag">VR / AR</span>
+          <div class="results__case-title">Metaverse Training Platform for Global Enterprise</div>
+          <div class="results__case-desc">Delivered an Unreal Engine 5 immersive training environment reducing onboarding time by 60% across 12 countries.</div>
+          <div class="results__case-footer">
+            <span>2023</span>
+            <a href="#" class="results__case-link">Read case</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>

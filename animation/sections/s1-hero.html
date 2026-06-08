@@ -1,0 +1,234 @@
+<style>
+  /* ── Hero ──────────────────────────────────────────────────────── */
+  .hero {
+    position: relative;
+    height: min(100vh, 1080px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: radial-gradient(120% 100% at 50% 0%,
+      #1567e0 0%, #267ce8 18.75%, #3792f0 37.5%,
+      #59bcff 75%, #83cdff 81.25%, #ace2ff 87.5%,
+      #d6eeff 93.75%, #ffffff 100%);
+    animation: heroFadeIn 0.6s ease both;
+  }
+  .hero__grid {
+    position: absolute; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,0.5) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.5) 1px, transparent 1px);
+    background-size: 128px 128px;
+    opacity: 0.18;
+    -webkit-mask-image: radial-gradient(ellipse 85% 70% at 50% 55%, #000 0%, rgba(0,0,0,0.5) 50%, transparent 78%);
+    mask-image: radial-gradient(ellipse 85% 70% at 50% 55%, #000 0%, rgba(0,0,0,0.5) 50%, transparent 78%);
+  }
+  .hero__globe {
+    position: absolute; left: 0; bottom: 0; width: 100%; height: 60%;
+    border: 0; background: transparent; z-index: 1; pointer-events: auto;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, transparent 8%, rgba(0,0,0,0.08) 30%, #000 64%);
+    mask-image: linear-gradient(to bottom, transparent 0%, transparent 8%, rgba(0,0,0,0.08) 30%, #000 64%);
+    opacity: 0;
+    animation: fadeIn 1.0s ease 0.35s both;
+  }
+  .hero .nav {
+    position: relative; z-index: 3;
+    display: flex; justify-content: center; padding: 32px;
+    opacity: 0; animation: fadeIn 0.45s ease both;
+  }
+  .hero .nav__inner {
+    display: flex; align-items: center; gap: 32px;
+  }
+  .hero .nav__brand { display: flex; align-items: center; gap: 6px; }
+  .hero .nav__brand img { height: 24px; width: auto; }
+  .hero .nav__links {
+    display: flex; gap: 16px;
+    font-family: var(--font-display); font-weight: 500; font-size: 16px;
+    color: #fff; white-space: nowrap;
+  }
+  .hero .nav__links a { color: inherit; opacity: 0.95; }
+  .hero .nav__links a:hover { opacity: 1; }
+  .hero__content {
+    position: relative; z-index: 2; flex: 1 0 auto;
+    width: 1120px; max-width: 100%; margin: 0 auto;
+    padding: 64px 24px;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-start; gap: 48px; text-align: center;
+    pointer-events: none;
+  }
+  .hero__content > * { pointer-events: auto; }
+  .hero__heading {
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
+    filter: drop-shadow(0 1px 1.5px rgba(10,13,18,0.1));
+  }
+  .hero__title {
+    font-family: var(--font-display); font-weight: 600;
+    font-size: clamp(2.6rem, 5.2vw, 72px); line-height: 1.25; letter-spacing: -1.44px;
+  }
+  .hero__title .line { display: block; }
+  .hero__title .word {
+    display: inline-block;
+    background: linear-gradient(180deg, #f5faff 50%, #bcdaff 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    opacity: 0; animation: fadeUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .hero__subtitle {
+    max-width: 680px; font-size: 20px; line-height: 32px; color: #fff;
+    opacity: 0; animation: fadeUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .hero__actions {
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap; justify-content: center;
+    opacity: 0; animation: fadeUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .hero-btn {
+    font-family: var(--font-body); font-weight: 500; font-size: 16px;
+    line-height: 24px; padding: 12px 18px; border-radius: var(--radius-md);
+    cursor: pointer; border: 2px solid transparent;
+    transition: background 180ms ease, border-color 180ms ease;
+  }
+  .hero-btn--primary { background: var(--brand); color: #fff; border-color: rgba(255,255,255,0.12); }
+  .hero-btn--primary:hover { background: var(--brand-dark); }
+  .hero-btn--secondary { background: #fff; color: #414651; border-color: #d5d7da; }
+  .hero-btn--secondary:hover { background: #f5f7fa; }
+  .hero-partners {
+    position: relative; z-index: 2;
+    display: flex; flex-direction: column; align-items: center; gap: 32px;
+    padding: 32px; width: 100%;
+    opacity: 0; animation: fadeIn 0.5s ease both;
+  }
+  .hero-partners__label { font-size: 18px; line-height: 28px; color: var(--text-secondary); }
+  .hero-partners__marquee {
+    width: 100%; max-width: 1000px; overflow: hidden;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 10%, #000 90%, transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 10%, #000 90%, transparent 100%);
+  }
+  .hero-partners__track {
+    display: flex; width: max-content;
+    animation: partnersScroll 28s linear infinite;
+  }
+  .hero-partners__marquee:hover .hero-partners__track { animation-play-state: paused; }
+  .hero-partners__group {
+    display: flex; align-items: center; gap: 72px; padding-right: 72px;
+  }
+  .hero-partners__group img {
+    height: 30px; width: auto; max-width: 130px; object-fit: contain;
+    filter: grayscale(1); opacity: 0.75;
+  }
+  @keyframes heroFadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes partnersScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  @media (prefers-reduced-motion: reduce) {
+    .hero, .hero__globe, .hero__title .word, .hero__subtitle,
+    .hero__actions, .hero .nav, .hero-partners {
+      animation: none !important; opacity: 1 !important; transform: none !important;
+    }
+  }
+</style>
+
+<section class="hero">
+  <div class="hero__grid" aria-hidden="true"></div>
+  <iframe class="hero__globe" src="../anim/globe.html?blend=1&topf=2.0&v=12" title="" scrolling="no" allowtransparency="true"></iframe>
+
+  <nav class="nav">
+    <div class="nav__inner">
+      <div class="nav__brand">
+        <img src="https://www.figma.com/api/mcp/asset/7620c8d3-9c87-4cb3-b460-3baf899c40cd" alt="">
+        <img src="https://www.figma.com/api/mcp/asset/6ed1d3bb-ee6b-4d3a-80d9-b8c4fa59214b" alt="Varmeta">
+      </div>
+      <div class="nav__links">
+        <a href="#">About Us</a>
+        <a href="#">Services</a>
+        <a href="#">Our Solutions</a>
+        <a href="#">Resources</a>
+        <a href="#">Portfolio</a>
+        <a href="#">Blog</a>
+        <a href="#">Careers</a>
+      </div>
+      <button class="hero-btn hero-btn--secondary">Consult Expert</button>
+    </div>
+  </nav>
+
+  <div class="hero__content">
+    <div class="hero__heading">
+      <h1 class="hero__title">
+        <span class="line">Premier AI Consulting &amp;</span>
+        <span class="line">Enterprise Blockchain Partner</span>
+      </h1>
+      <p class="hero__subtitle">
+        With Varmeta&rsquo;s expertise in Blockchain and AI consulting, you can deploy
+        high-performance architectures designed for rapid growth and enterprise-grade resilience.
+      </p>
+    </div>
+    <div class="hero__actions">
+      <button class="hero-btn hero-btn--primary">Schedule a Strategy Call</button>
+      <button class="hero-btn hero-btn--secondary">View Proven Portfolio</button>
+    </div>
+  </div>
+
+  <div class="hero-partners">
+    <p class="hero-partners__label">Trusted by innovative companies worldwide</p>
+    <div class="hero-partners__marquee">
+      <div class="hero-partners__track">
+        <div class="hero-partners__group">
+          <img src="https://www.figma.com/api/mcp/asset/bf088978-7c81-4e64-aea3-433e5c8886dd" alt="">
+          <img src="https://www.figma.com/api/mcp/asset/7ec25ff0-33dd-4e5b-85f2-ea4303946627" alt="AWS">
+          <img src="https://www.figma.com/api/mcp/asset/8f0d994e-68bf-422c-9561-64d3b0349af3" alt="OpenAI">
+          <img src="https://www.figma.com/api/mcp/asset/bf5c20db-50d1-4874-9460-cd2321e6ce49" alt="Polygon">
+          <img src="https://www.figma.com/api/mcp/asset/f0267c39-0d81-4234-aa6e-e4089aed25fd" alt="Hedera">
+          <img src="https://www.figma.com/api/mcp/asset/df4f90f7-90a3-40dc-bf63-86dc6bdd1105" alt="">
+        </div>
+        <div class="hero-partners__group" aria-hidden="true">
+          <img src="https://www.figma.com/api/mcp/asset/bf088978-7c81-4e64-aea3-433e5c8886dd" alt="">
+          <img src="https://www.figma.com/api/mcp/asset/7ec25ff0-33dd-4e5b-85f2-ea4303946627" alt="">
+          <img src="https://www.figma.com/api/mcp/asset/8f0d994e-68bf-422c-9561-64d3b0349af3" alt="">
+          <img src="https://www.figma.com/api/mcp/asset/bf5c20db-50d1-4874-9460-cd2321e6ce49" alt="">
+          <img src="https://www.figma.com/api/mcp/asset/f0267c39-0d81-4234-aa6e-e4089aed25fd" alt="">
+          <img src="https://www.figma.com/api/mcp/asset/df4f90f7-90a3-40dc-bf63-86dc6bdd1105" alt="">
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+(function () {
+  var WORD_START = 720, WORD_STEP = 90, SUB_OFFSET = 120, BTN_OFFSET = 140;
+  var wordIndex = 0;
+  document.querySelectorAll('.hero__title .line').forEach(function (line) {
+    var words = line.textContent.trim().split(/\s+/);
+    line.textContent = '';
+    words.forEach(function (word, i) {
+      var span = document.createElement('span');
+      span.className = 'word';
+      span.textContent = word;
+      span.style.animationDelay = (WORD_START + wordIndex * WORD_STEP) + 'ms';
+      line.appendChild(span);
+      if (i < words.length - 1) line.appendChild(document.createTextNode(' '));
+      wordIndex++;
+    });
+  });
+  var lastWordStart = WORD_START + (wordIndex - 1) * WORD_STEP;
+  var subtitleDelay = lastWordStart + SUB_OFFSET;
+  var btnDelay = subtitleDelay + BTN_OFFSET;
+  var navLogoDelay = btnDelay + 520;
+  var sub = document.querySelector('.hero__subtitle');
+  var act = document.querySelector('.hero__actions');
+  var nav = document.querySelector('.hero .nav');
+  var prt = document.querySelector('.hero-partners');
+  if (sub) sub.style.animationDelay = subtitleDelay + 'ms';
+  if (act) act.style.animationDelay = btnDelay + 'ms';
+  if (nav) nav.style.animationDelay = navLogoDelay + 'ms';
+  if (prt) prt.style.animationDelay = navLogoDelay + 'ms';
+
+  var globe = document.querySelector('.hero__globe');
+  window.addEventListener('pointermove', function (e) {
+    if (!globe || !globe.contentWindow) return;
+    var r = globe.getBoundingClientRect();
+    globe.contentWindow.postMessage({
+      type: 'parentpointer',
+      x: e.clientX - r.left, y: e.clientY - r.top,
+      w: r.width, h: r.height
+    }, '*');
+  });
+})();
+</script>

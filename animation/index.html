@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Varmeta — Premier AI Consulting &amp; Enterprise Blockchain Partner</title>
+  <style>
+    :root {
+      --brand: #1078f3;
+      --brand-dark: #1567e0;
+      --text-primary: #1d1d1d;
+      --text-secondary: #494949;
+      --text-tertiary: rgba(255,255,255,0.4);
+      --border: #eaeaea;
+      --border-solid: #d7d7d7;
+      --bg-primary: #fff;
+      --font-display: 'Visby CF', 'Google Sans', system-ui, -apple-system, sans-serif;
+      --font-body: 'Google Sans Flex', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --radius-xl: 16px;
+      --radius-2xl: 24px;
+      --radius-3xl: 32px;
+      --radius-4xl: 48px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--font-body); background: #fff; color: var(--text-primary); overflow-x: hidden; }
+    img { display: block; }
+    a { text-decoration: none; color: inherit; }
+
+    /* ── Section scroll reveal ─────────────────────────────────── */
+    .section-wrap {
+      opacity: 0;
+      transform: translateY(32px);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+    .section-wrap.revealed {
+      opacity: 1;
+      transform: none;
+    }
+    /* Hero is always visible */
+    .section-wrap--hero { opacity: 1; transform: none; }
+
+    /* ── Loading state ─────────────────────────────────────────── */
+    #app { min-height: 100vh; }
+    .loader {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: var(--font-display);
+      font-size: 16px;
+      color: var(--text-secondary);
+      gap: 12px;
+    }
+    .loader::before {
+      content: '';
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--brand);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="loader">Loading</div>
+  </div>
+
+  <script>
+  (function () {
+    var SECTIONS = [
+      { url: 'sections/s1-hero.html',          cls: 'section-wrap--hero' },
+      { url: 'sections/s2-nav.html',           cls: '' },
+      { url: 'sections/s3-expertise.html',     cls: '' },
+      { url: 'sections/s4-how-we-work.html',   cls: '' },
+      { url: 'sections/s5-results.html',       cls: '' },
+      { url: 'sections/s6-global.html',        cls: '' },
+      { url: 'sections/s7-testimonials.html',  cls: '' },
+      { url: 'sections/s8-banner.html',        cls: '' },
+      { url: 'sections/s9-insights.html',      cls: '' },
+      { url: 'sections/s11-faq.html',          cls: '' },
+      { url: 'sections/s13-footer.html',       cls: '' },
+    ];
+
+    /* Load a fragment, re-execute its scripts, return a wrapper div */
+    async function loadSection(info) {
+      var res = await fetch(info.url);
+      var html = await res.text();
+
+      var wrap = document.createElement('div');
+      wrap.className = 'section-wrap ' + info.cls;
+
+      /* Parse the fragment */
+      var tmp = document.createElement('div');
+      tmp.innerHTML = html;
+
+      /* Hoist <style> tags so they apply globally */
+      tmp.querySelectorAll('style').forEach(function (s) {
+        document.head.appendChild(s.cloneNode(true));
+        s.remove();
+      });
+
+      wrap.appendChild(tmp);
+
+      /* Re-execute <script> blocks */
+      tmp.querySelectorAll('script').forEach(function (s) {
+        var el = document.createElement('script');
+        if (s.src) el.src = s.src;
+        else el.textContent = s.textContent;
+        document.head.appendChild(el);
+        s.remove();
+      });
+
+      return wrap;
+    }
+
+    /* IntersectionObserver for scroll reveal */
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) {
+          e.target.classList.add('revealed');
+          io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.08 });
+
+    async function init() {
+      var app = document.getElementById('app');
+      /* Remove the loader */
+      app.innerHTML = '';
+
+      for (var i = 0; i < SECTIONS.length; i++) {
+        var wrap = await loadSection(SECTIONS[i]);
+        app.appendChild(wrap);
+        /* Observe for reveal (skip hero which is already visible) */
+        if (!wrap.classList.contains('section-wrap--hero')) {
+          io.observe(wrap);
+        } else {
+          wrap.classList.add('revealed');
+        }
+      }
+    }
+
+    init().catch(function (e) {
+      document.getElementById('app').innerHTML =
+        '<div style="padding:40px;color:red">Failed to load: ' + e.message + '</div>';
+    });
+  })();
+  </script>
+</body>
+</html>

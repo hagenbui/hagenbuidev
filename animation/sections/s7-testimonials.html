@@ -1,0 +1,174 @@
+<style>
+  /* ── Testimonials ─────────────────────────────────────────────── */
+  .testimonials {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 64px 32px;
+    min-height: 1080px;
+    overflow: hidden;
+    background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 1920 1080' xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none'><rect width='100%' height='100%' fill='url(%23g)'/><defs><radialGradient id='g' gradientUnits='userSpaceOnUse' cx='960' cy='540' r='960'><stop stop-color='rgba(16,120,243,1)' offset='0'/><stop stop-color='rgba(46,137,245,1)' offset='0.165'/><stop stop-color='rgba(106,171,248,1)' offset='0.495'/><stop stop-color='rgba(195,221,252,1)' offset='0.83'/><stop stop-color='rgba(255,255,255,1)' offset='1'/></radialGradient></defs></svg>");
+    background-size: cover;
+  }
+  .testimonials__grid-bg {
+    position: absolute; inset: 0; pointer-events: none;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 128px 128px;
+    opacity: 0.15;
+  }
+  .testimonials__inner {
+    position: relative;
+    max-width: 1280px; width: 100%;
+    display: flex; flex-direction: column; align-items: center; gap: 48px;
+  }
+  .testimonials__glow {
+    position: absolute;
+    width: 1280px; height: 700px;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(ellipse, rgba(16,120,243,0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Stacked card effect */
+  .testimonials__stack {
+    position: relative;
+    display: flex; flex-direction: column; align-items: center;
+    width: 100%;
+  }
+  .testimonials__card {
+    position: relative;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3xl);
+    overflow: hidden;
+    display: flex;
+    height: 400px;
+    margin-bottom: -360px;
+  }
+  .testimonials__card:last-child { margin-bottom: 0; }
+  .testimonials__card--1 { width: 100%; z-index: 3; }
+  .testimonials__card--2 { width: calc(100% - 40px); opacity: 0.9; z-index: 2; }
+  .testimonials__card--3 { width: calc(100% - 80px); opacity: 0.8; z-index: 1; }
+
+  /* Ensure last card doesn't clip the bottom */
+  .testimonials__stack { padding-bottom: 40px; }
+
+  .tcard__quote {
+    flex: 1; display: flex; flex-direction: column;
+    gap: 32px; padding: 48px;
+  }
+  .tcard__logo { height: 64px; width: auto; }
+  .tcard__text {
+    font-family: var(--font-display); font-weight: 600; font-size: 24px;
+    line-height: 36px; letter-spacing: -0.48px; color: var(--text-primary);
+    flex: 1;
+  }
+  .tcard__attribution {
+    display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  }
+  .tcard__name {
+    font-family: var(--font-display); font-weight: 500; font-size: 20px;
+    line-height: 28px; color: var(--text-primary);
+  }
+  .tcard__role { font-size: 14px; line-height: 20px; color: var(--text-secondary); }
+  .tcard__image {
+    flex: 1; padding: 16px;
+  }
+  .tcard__image-inner {
+    width: 100%; height: 100%;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    overflow: hidden;
+    background: #eef8ff;
+  }
+  .tcard__image-inner img {
+    width: 100%; height: 100%; object-fit: cover;
+  }
+</style>
+
+<section class="testimonials">
+  <div class="testimonials__grid-bg" aria-hidden="true"></div>
+  <div class="testimonials__inner">
+    <div class="testimonials__glow" aria-hidden="true"></div>
+
+    <div class="testimonials__stack">
+      <!-- Card 1 — front, full opacity -->
+      <div class="testimonials__card testimonials__card--1">
+        <div class="tcard__quote">
+          <img class="tcard__logo"
+               src="https://www.figma.com/api/mcp/asset/8f8410e5-12cc-4ca0-8e76-05b00c16a832"
+               alt="The Hashgraph Association">
+          <p class="tcard__text">
+            "I'm very impressed with Varmeta team's speed, proactivity, and agility.
+            They handle every task with great attention to detail, and work hard even
+            during national holidays to deliver on time."
+          </p>
+          <div class="tcard__attribution">
+            <div class="tcard__name">Kent Makishima</div>
+            <div class="tcard__role">Head of Product, The Hashgraph Association</div>
+          </div>
+        </div>
+        <div class="tcard__image">
+          <div class="tcard__image-inner">
+            <img src="https://www.figma.com/api/mcp/asset/f09b1beb-260e-4a44-b7cd-3914ce53c1c9"
+                 alt="Kent Makishima">
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2 — middle, slightly smaller -->
+      <div class="testimonials__card testimonials__card--2">
+        <div class="tcard__quote">
+          <img class="tcard__logo"
+               src="https://www.figma.com/api/mcp/asset/8f8410e5-12cc-4ca0-8e76-05b00c16a832"
+               alt="The Hashgraph Association">
+          <p class="tcard__text">
+            "I'm very impressed with Varmeta team's speed, proactivity, and agility.
+            They handle every task with great attention to detail, and work hard even
+            during national holidays to deliver on time."
+          </p>
+          <div class="tcard__attribution">
+            <div class="tcard__name">Kent Makishima</div>
+            <div class="tcard__role">Head of Product, The Hashgraph Association</div>
+          </div>
+        </div>
+        <div class="tcard__image">
+          <div class="tcard__image-inner">
+            <img src="https://www.figma.com/api/mcp/asset/9d2337ce-5aeb-4fec-86ef-e5fda641e9c0"
+                 alt="">
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3 — back, smallest -->
+      <div class="testimonials__card testimonials__card--3">
+        <div class="tcard__quote">
+          <img class="tcard__logo"
+               src="https://www.figma.com/api/mcp/asset/8f8410e5-12cc-4ca0-8e76-05b00c16a832"
+               alt="The Hashgraph Association">
+          <p class="tcard__text">
+            "I'm very impressed with Varmeta team's speed, proactivity, and agility.
+            They handle every task with great attention to detail, and work hard even
+            during national holidays to deliver on time."
+          </p>
+          <div class="tcard__attribution">
+            <div class="tcard__name">Kent Makishima</div>
+            <div class="tcard__role">Head of Product, The Hashgraph Association</div>
+          </div>
+        </div>
+        <div class="tcard__image">
+          <div class="tcard__image-inner">
+            <img src="https://www.figma.com/api/mcp/asset/9d2337ce-5aeb-4fec-86ef-e5fda641e9c0"
+                 alt="">
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
