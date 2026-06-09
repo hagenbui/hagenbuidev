@@ -8,10 +8,10 @@
     /* ── Camera Control ── */
     :root {
       --cam-perspective:        900px;
-      --cam-perspective-origin: 50% 40%;
-      --cam-rotateX:            52deg;
-      --cam-rotateZ:            -18deg;
-      --cam-scale:              1.15;
+      --cam-perspective-origin: 50% 50%;
+      --cam-rotateX:            0deg;
+      --cam-rotateZ:            0deg;
+      --cam-scale:              1.0;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
@@ -21,10 +21,27 @@
       display: flex; align-items: center; justify-content: center;
       perspective: var(--cam-perspective);
       perspective-origin: var(--cam-perspective-origin);
+      position: relative;
+    }
+    body::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; bottom: 0; width: 15%;
+      background: linear-gradient(to right, #fff 0%, rgba(255,255,255,0) 100%);
+      pointer-events: none;
+      z-index: 10;
+    }
+    body::after {
+      content: '';
+      position: absolute;
+      top: 0; right: 0; bottom: 0; width: 15%;
+      background: linear-gradient(to left, #fff 0%, rgba(255,255,255,0) 100%);
+      pointer-events: none;
+      z-index: 10;
     }
     .vp {
       position: relative; width: 100%;
-      max-width: 675px; max-height: 323px;
+      max-width: 900px;
       aspect-ratio: 675 / 323; overflow: hidden;
       transform: rotateX(var(--cam-rotateX)) rotateZ(var(--cam-rotateZ)) scale(var(--cam-scale));
       transform-style: preserve-3d;
@@ -32,159 +49,156 @@
     }
     svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 
-    /* ── Node visual states ── */
-    .n-outer { fill: #fff; stroke: rgba(200,213,222,0.60); stroke-width: 1.2; transition: stroke .4s, fill .4s; }
-    .n-ring  { fill: none; stroke: rgba(200,213,222,0.55); stroke-width: 1.0;
+    /* ── Node visual states — solid token colors, no alpha fills ── */
+    .n-outer { fill: #ffffff; stroke: #1078f3; stroke-width: 1.2; transition: stroke .4s, fill .4s; }
+    .n-ring  { fill: none; stroke: #1078f3; stroke-width: 1.0;
                transform-box: fill-box; transform-origin: center;
                transition: stroke .4s, transform .4s ease; }
-    .n-dot   { fill: rgba(200,213,222,0.72); transform-box: fill-box; transform-origin: center;
+    .n-dot   { fill: #1078f3; transform-box: fill-box; transform-origin: center;
                transition: fill .4s, transform .4s ease; }
-    .n-badge { opacity: 0; transition: opacity .25s .1s; }
 
-    .chk .n-outer { fill: rgba(230,244,255,0.90); stroke: rgba(16,120,243,0.75); }
-    .chk .n-ring  { stroke: rgba(16,120,243,0.85); transform: rotate(45deg); }
-    .chk .n-dot   { fill:   #1078f3; transform: rotate(45deg); }
-    .chk .n-badge { opacity: 1; }
+    /* Hover — secondary blue tint; declared before .chk so verified nodes keep their colors */
+    #ng > g:hover .n-outer { fill: #eef8ff; stroke: #1078f3; }
+    #ng > g:hover .n-ring  { stroke: #1078f3; }
+    #ng > g:hover .n-dot   { fill: #1078f3; }
 
+    /* Verified state — same specificity as :hover, declared after so it wins on tied nodes */
+    #ng > g.chk .n-outer { fill: #1078f3; stroke: #1078f3; }
+    #ng > g.chk .n-ring  { stroke: #ffffff; transform: rotate(45deg); }
+    #ng > g.chk .n-dot   { fill: #ffffff; transform: rotate(45deg); }
+
+    /* ── Hover: scale + expanding pulse rings ── */
+
+    .node-body {
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    .n-pulse {
+      opacity: 0;
+      fill: none;
+      stroke: #1078f3;
+      stroke-width: 1.2;
+      transform-box: fill-box;
+      transform-origin: center;
+    }
   </style>
 </head>
 <body>
 <div class="vp">
   <svg id="sv" viewBox="0 0 675 323">
-    <defs>
-      <g id="sgdefs"></g>
-      <linearGradient id="fadeL" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="120" y2="0">
-        <stop offset="0" stop-color="#fff" stop-opacity="1"/>
-        <stop offset="1" stop-color="#fff" stop-opacity="0"/>
-      </linearGradient>
-      <linearGradient id="fadeR" gradientUnits="userSpaceOnUse" x1="555" y1="0" x2="675" y2="0">
-        <stop offset="0" stop-color="#fff" stop-opacity="0"/>
-        <stop offset="1" stop-color="#fff" stop-opacity="1"/>
-      </linearGradient>
-    </defs>
     <g id="cg">
-      <g id="lg"></g>   <!-- L-shaped connection lines (gray) -->
-      <g id="active-lg"></g> <!-- active connection lines (cyan/blue) -->
-      <g id="ng"></g>   <!-- node boxes -->
-      <g id="sug"></g>  <!-- surge particles -->
+      <g id="grid" pointer-events="none"></g>
+      <defs id="sdefs"></defs>
+      <defs id="baseDefs"></defs>
+      <g id="lg" pointer-events="none"></g>        <!-- base neutral gray curves -->
+      <g id="sug" pointer-events="none"></g>       <!-- surge glow particles -->
+      <g id="ng"></g>        <!-- node boxes -->
     </g>
-    <!-- Edge fades — inside SVG so they paint above the 3D-transformed content -->
-    <rect x="0" y="0" width="120" height="323" fill="url(#fadeL)" pointer-events="none"/>
-    <rect x="555" y="0" width="120" height="323" fill="url(#fadeR)" pointer-events="none"/>
   </svg>
 </div>
 
 <script>
-const NS  = 'http://www.w3.org/2000/svg';
+const NS = 'http://www.w3.org/2000/svg';
 
-// Spacious, asymmetric node positions within an 801px tile
-// Optimized mathematically so that every single segment length
-// is an integer multiple of the 9px dash cycle (5px dash + 4px gap)
 const PAT = [
-  { id: 0, rx: 0,   ry: 161 }, // Start: mid Y
-  { id: 1, rx: 153, ry: 71  }, // top
-  { id: 2, rx: 171, ry: 251 }, // bot
-  { id: 3, rx: 324, ry: 71  }, // top
-  { id: 4, rx: 342, ry: 161 }, // mid
-  { id: 5, rx: 495, ry: 251 }, // bot
-  { id: 6, rx: 513, ry: 71  }, // top
-  { id: 7, rx: 666, ry: 161 }, // mid
+  { id: 0, rx: 0,   ry: 161 },
+  { id: 1, rx: 153, ry: 71  },
+  { id: 2, rx: 171, ry: 251 },
+  { id: 3, rx: 324, ry: 71  },
+  { id: 4, rx: 400, ry: 161 },
+  { id: 5, rx: 495, ry: 251 },
+  { id: 6, rx: 513, ry: 71  },
+  { id: 7, rx: 666, ry: 161 },
 ];
-const TW  = 801;    // tile width (multiple of 9: 9 * 89)
-const NT  = 3;      // tiles in pool
-// ── SYNC SPEED ── surge screen speed ≈ SCROLL_PPS + 70 = ~70 px/s visible
-// Match pace across all 3 animations by keeping this ratio (surge >> scroll).
-// ai-agent / data-flow: PSPEED ≈ 0.006/frame → ~2.8 s to traverse canvas at 60 fps
-const SCROLL_PPS = 48;
+const TW  = 801;
+const NT  = 3;
+// ── SYNC SPEED ── surge screen speed ≈ SCROLL_PPS + 70 ≈ 70 px/s visible
+const SCROLL_PPS = 80;
 
 let nodes = [];
 for (let t = 0; t < NT; t++) {
   PAT.forEach(p => {
-    nodes.push({
-      tile: t,
-      id: p.id,
-      cx: p.rx + t * TW,
-      cy: p.ry,
-      checked: false,
-      el: null
-    });
+    nodes.push({ tile: t, id: p.id, cx: p.rx + t * TW, cy: p.ry, checked: false, el: null, hover: 0, hoverTgt: 0, bodyEl: null, pulseEls: [] });
   });
 }
 
-const cg  = document.getElementById('cg');
-const lg  = document.getElementById('lg');
-const ng  = document.getElementById('ng');
-const sug = document.getElementById('sug');
-const activeLg = document.getElementById('active-lg');
+const cg       = document.getElementById('cg');
+const lg       = document.getElementById('lg');
+const ng       = document.getElementById('ng');
+const sug      = document.getElementById('sug');
+const sdefs    = document.getElementById('sdefs');
+const baseDefs = document.getElementById('baseDefs');
+let surgeGlowId = 0;
 
-/* ── SVG node factory ──────────────────────────────────────── */
+/* ── SVG node factory ── */
 const SZ = 44, H = SZ / 2, IR = 11, ID = 5;
 
 function mkNode(n) {
   const g = document.createElementNS(NS, 'g');
   g.setAttribute('transform', `translate(${n.cx},${n.cy})`);
 
+  // Inner wrapper
+  const body = document.createElementNS(NS, 'g');
+  body.setAttribute('class', 'node-body');
+  n.bodyEl = body;
+
+  // Two expanding pulse rings
+  n.pulseEls = [];
+  for (let i = 0; i < 2; i++) {
+    const pulse = document.createElementNS(NS, 'circle');
+    pulse.setAttribute('cx', '0'); pulse.setAttribute('cy', '0');
+    pulse.setAttribute('r', String(H)); // base radius matching node bounds
+    pulse.setAttribute('class', `n-pulse n-pulse-${i}`);
+    body.appendChild(pulse);
+    n.pulseEls.push(pulse);
+  }
+
   const outer = document.createElementNS(NS, 'rect');
   outer.setAttribute('x', -H); outer.setAttribute('y', -H);
   outer.setAttribute('width', SZ); outer.setAttribute('height', SZ);
   outer.setAttribute('rx', '5'); outer.setAttribute('ry', '5');
   outer.setAttribute('class', 'n-outer');
-  g.appendChild(outer);
+  body.appendChild(outer);
 
   const ring = document.createElementNS(NS, 'rect');
   ring.setAttribute('x', -IR); ring.setAttribute('y', -IR);
   ring.setAttribute('width', IR * 2); ring.setAttribute('height', IR * 2);
   ring.setAttribute('rx', '2'); ring.setAttribute('ry', '2');
   ring.setAttribute('class', 'n-ring');
-  g.appendChild(ring);
+  body.appendChild(ring);
 
   const dot = document.createElementNS(NS, 'rect');
   dot.setAttribute('x', -ID); dot.setAttribute('y', -ID);
   dot.setAttribute('width', ID * 2); dot.setAttribute('height', ID * 2);
   dot.setAttribute('rx', '1'); dot.setAttribute('ry', '1');
   dot.setAttribute('class', 'n-dot');
-  g.appendChild(dot);
+  body.appendChild(dot);
 
-  // Check badge (bottom-right corner)
-  const badge = document.createElementNS(NS, 'g');
-  badge.setAttribute('class', 'n-badge');
-  badge.setAttribute('transform', `translate(${H - 1},${H - 1})`);
-
-  const br = document.createElementNS(NS, 'rect');
-  br.setAttribute('x', '-11'); br.setAttribute('y', '-11');
-  br.setAttribute('width', '22'); br.setAttribute('height', '22');
-  br.setAttribute('fill', '#fff');
-  br.setAttribute('stroke', '#eef8ff'); br.setAttribute('stroke-width', '1');
-  badge.appendChild(br);
-
-  const bk = document.createElementNS(NS, 'path');
-  bk.setAttribute('d', 'M -4 0 L -1 3 L 5 -3');
-  bk.setAttribute('stroke', '#1078f3'); bk.setAttribute('stroke-width', '1.5');
-  bk.setAttribute('fill', 'none');
-  bk.setAttribute('stroke-linecap', 'round'); bk.setAttribute('stroke-linejoin', 'round');
-  badge.appendChild(bk);
-
-  g.appendChild(badge);
+  g.appendChild(body);
   ng.appendChild(g);
+
+  // Set up mouse hover event listeners
+  g.addEventListener('mouseenter', () => { n.hoverTgt = 1; });
+  g.addEventListener('mouseleave', () => { n.hoverTgt = 0; });
+
   return g;
 }
 
-/* ── Initialise nodes ───────────────────────────────────────── */
 nodes.forEach(n => { n.el = mkNode(n); });
 
-/* ── Edge connections ───────────────────────────────────────── */
-// Explicitly define the bend X coordinates to ensure vertical lines align perfectly
+/* ── Edge definitions (no bendX needed — bezier handles curves) ── */
 const edgeDefs = [
-  { from: 0, to: 1, bendX: 72 },
-  { from: 0, to: 2, bendX: 72 },
-  { from: 1, to: 3, bendX: 234 },
-  { from: 2, to: 4, bendX: 333 },
-  { from: 3, to: 4, bendX: 333 },
-  { from: 4, to: 5, bendX: 414 },
-  { from: 4, to: 6, bendX: 414 },
-  { from: 5, to: 7, bendX: 585 },
-  { from: 6, to: 7, bendX: 585 },
-  { from: 7, to: 0, bendX: 729, isCrossTile: true },
+  { from: 0, to: 1 },
+  { from: 0, to: 2 },
+  { from: 1, to: 3 },
+  { from: 2, to: 4 },
+  { from: 3, to: 4 },
+  { from: 4, to: 5 },
+  { from: 4, to: 6 },
+  { from: 5, to: 7 },
+  { from: 6, to: 7 },
+  { from: 7, to: 0, isCrossTile: true },
 ];
 
 let edges = [];
@@ -194,141 +208,203 @@ for (let t = 0; t < NT; t++) {
     edges.push({
       from: [t, d.from],
       to: [d.isCrossTile ? nextT : t, d.to],
-      localBendX: d.bendX,
-      dxBend: d.bendX - PAT[d.from].rx, // Store constant horizontal distance to bend
-      fromNode: null,
-      toNode: null
+      isCrossTile: !!d.isCrossTile,
+      fromNode: null, toNode: null,
+      arcLen: 0, cyanEl: null,
+      surge: { active: false, progressPx: 0, speed: 0 }
     });
   });
 }
 
-edges.forEach((e, idx) => {
-  e.fromNode = nodes.find(n => n.tile === e.from[0] && n.id === e.from[1]);
-  e.toNode   = nodes.find(n => n.tile === e.to[0] && n.id === e.to[1]);
-
-  // Varies speed between 65 and 110 px/s
-  e.surge = {
-    active: false,
-    progressPx: 0,
-    speed: SCROLL_PPS + 70 + (Math.sin(idx * 1.7) + 1) * 8
-  };
-});
-
-/* ── L-path helpers ─────────────────────────────────────────── */
-function lPathD(e) {
-  const a = e.fromNode;
-  const b = e.toNode;
+/* ── Bezier helpers ── */
+function getBezierCoords(e) {
+  const a = e.fromNode, b = e.toNode;
   let bx = b.cx;
   if (bx < a.cx) bx += NT * TW;
-
-  const bendX = a.cx + e.dxBend;
-
-  if (Math.abs(a.cy - b.cy) < 2) return `M${a.cx} ${a.cy}H${bx}`;
-  return `M${a.cx} ${a.cy}H${bendX}V${b.cy}H${bx}`;
+  const dx = bx - a.cx;
+  const isHoriz = Math.abs(a.cy - b.cy) < 2;
+  return {
+    x1: a.cx,  y1: a.cy,
+    cx1: a.cx + dx * 0.45, cy1: a.cy,
+    cx2: bx  - dx * 0.45, cy2: b.cy,
+    x2: bx,   y2: b.cy,
+    isHoriz
+  };
 }
 
-function getEdgeLength(e) {
-  let bx = e.toNode.cx;
-  if (bx < e.fromNode.cx) bx += NT * TW;
-  return (bx - e.fromNode.cx) + Math.abs(e.toNode.cy - e.fromNode.cy);
+function bezierPathD(e) {
+  const { x1, y1, cx1, cy1, cx2, cy2, x2, y2, isHoriz } = getBezierCoords(e);
+  if (isHoriz) return `M${x1} ${y1}H${x2}`;
+  return `M${x1} ${y1} C${cx1} ${cy1} ${cx2} ${cy2} ${x2} ${y2}`;
 }
 
-/* ── Build connection lines ─────────────────────────────────── */
+// Numerical arc-length of the cubic bezier (60-sample integration)
+function computeArcLen(e) {
+  const { x1, y1, cx1, cy1, cx2, cy2, x2, y2, isHoriz } = getBezierCoords(e);
+  if (isHoriz) return Math.abs(x2 - x1);
+  let len = 0, px = x1, py = y1;
+  for (let i = 1; i <= 60; i++) {
+    const t = i / 60, mt = 1 - t;
+    const x = mt*mt*mt*x1 + 3*mt*mt*t*cx1 + 3*mt*t*t*cx2 + t*t*t*x2;
+    const y = mt*mt*mt*y1 + 3*mt*mt*t*cy1 + 3*mt*t*t*cy2 + t*t*t*y2;
+    const ddx = x - px, ddy = y - py;
+    len += Math.sqrt(ddx*ddx + ddy*ddy);
+    px = x; py = y;
+  }
+  return len;
+}
+
+/* ── Link nodes, compute arc lengths, setup surges ── */
+edges.forEach((e, idx) => {
+  e.fromNode = nodes.find(n => n.tile === e.from[0] && n.id === e.from[1]);
+  e.toNode   = nodes.find(n => n.tile === e.to[0]   && n.id === e.to[1]);
+  e.arcLen   = computeArcLen(e);
+  e.surge.speed = SCROLL_PPS + 460 + (Math.sin(idx * 1.7) + 1) * 12;
+});
+
+/* ── Build connection lines ── */
 function buildLines() {
   lg.innerHTML = '';
-  activeLg.innerHTML = '';
-  edges.forEach(e => {
-    const d = lPathD(e);
+  baseDefs.innerHTML = '';
 
-    // Gray line
+  edges.forEach(e => {
+    e.arcLen = computeArcLen(e); // refresh after tile recycle
+    const d = bezierPathD(e);
+    const coords = getBezierCoords(e);
+
+    // Create unique gradient ID for this edge instance
+    const grayGradId = `gg-${e.from[0]}-${e.from[1]}-${e.to[0]}-${e.to[1]}`;
+
+    // Gray base gradient
+    const grayGrad = document.createElementNS(NS, 'linearGradient');
+    grayGrad.setAttribute('id', grayGradId);
+    grayGrad.setAttribute('gradientUnits', 'userSpaceOnUse');
+    grayGrad.setAttribute('x1', String(coords.x1));
+    grayGrad.setAttribute('y1', String(coords.y1));
+    grayGrad.setAttribute('x2', String(coords.x2));
+    grayGrad.setAttribute('y2', String(coords.y2));
+
+    const stopsGray = [
+      { offset: '0%', color: '#8ed5ff', opacity: '0' },
+      { offset: '8%', color: '#8ed5ff', opacity: '0.35' },
+      { offset: '92%', color: '#8ed5ff', opacity: '0.35' },
+      { offset: '100%', color: '#8ed5ff', opacity: '0' }
+    ];
+    stopsGray.forEach(s => {
+      const stop = document.createElementNS(NS, 'stop');
+      stop.setAttribute('offset', s.offset);
+      stop.setAttribute('stop-color', s.color);
+      stop.setAttribute('stop-opacity', s.opacity);
+      grayGrad.appendChild(stop);
+    });
+    baseDefs.appendChild(grayGrad);
+
+    // Gray base curve
     const elGray = document.createElementNS(NS, 'path');
     elGray.setAttribute('d', d);
     elGray.setAttribute('fill', 'none');
-    elGray.setAttribute('stroke', 'rgba(210,220,226,0.42)');
+    elGray.setAttribute('stroke', `url(#${grayGradId})`);
     elGray.setAttribute('stroke-width', '1.2');
-    elGray.setAttribute('stroke-dasharray', '5 4');
     elGray.setAttribute('stroke-linecap', 'round');
     lg.appendChild(elGray);
-
-    // Cyan/blue line (initially empty)
-    const elCyan = document.createElementNS(NS, 'path');
-    elCyan.setAttribute('d', '');
-    elCyan.setAttribute('fill', 'none');
-    elCyan.setAttribute('stroke', '#1078f3');
-    elCyan.setAttribute('stroke-width', '1.2');
-    elCyan.setAttribute('stroke-linecap', 'round');
-    activeLg.appendChild(elCyan);
-    e.cyanEl = elCyan;
   });
 }
 
 buildLines();
 
-/* ── Surge glow — per-segment gradients follow corners cleanly ── */
-const sgDefsEl = document.getElementById('sgdefs');
-let surgeGlowId = 0;
-const GLOW_HALF = 32; // window half-width in SVG units
+const gridCircles = [];
 
-function drawSurgeGlow(e) {
-  const dist = e.surge.progressPx;
-  const x1 = e.fromNode.cx, y1 = e.fromNode.cy, y2 = e.toNode.cy;
-  let bx = e.toNode.cx;
-  if (bx < x1) bx += NT * TW;
-  const bendX = x1 + e.dxBend;
-  const L1 = bendX - x1, L2 = Math.abs(y2 - y1), L3 = bx - bendX;
+function buildGrid() {
+  const grid = document.getElementById('grid');
+  const VW = NT * TW;
+  const VH = 323;
+  const cy = VH / 2;
+  const maxDistY = 300;
+  const gridSpacing = TW / 22; // exactly 22 columns per tile (approx. 36.4px) for seamless looping and matching spacing
+  
+  // Center rows vertically relative to cy
+  const rows = [];
+  rows.push(cy);
+  for (let offset = gridSpacing; cy - offset > 0; offset += gridSpacing) {
+    rows.push(cy - offset);
+    rows.push(cy + offset);
+  }
+  rows.sort((a, b) => a - b);
 
-  const segs = Math.abs(y1 - y2) < 2
-    ? [{ x1, y1, x2: bx, y2: y1, len: bx - x1 }]
-    : [
-        { x1,    y1,   x2: bendX, y2: y1,  len: L1 },
-        { x1: bendX, y1, x2: bendX, y2,    len: L2 },
-        { x1: bendX, y1: y2, x2: bx, y2,  len: L3 },
-      ];
+  for (let x = gridSpacing / 2; x < VW; x += gridSpacing) {
+    rows.forEach(y => {
+      const distY = Math.abs(y - cy);
+      const f = Math.max(0, 1 - distY / maxDistY);
+      const ease = f;
+      const r = 2.25 * f; // match 2.25 base radius of other animations
+      if (r < 0.1) return;
 
-  const dS = dist - GLOW_HALF, dE = dist + GLOW_HALF;
-  let d = 0;
-
-  for (const seg of segs) {
-    if (seg.len < 0.1) { d += seg.len; continue; }
-
-    const v0 = Math.max(dS, d), v1 = Math.min(dE, d + seg.len);
-    if (v0 < v1) {
-      const f0 = (v0 - d) / seg.len, f1 = (v1 - d) / seg.len;
-      const px0 = seg.x1 + (seg.x2 - seg.x1) * f0;
-      const py0 = seg.y1 + (seg.y2 - seg.y1) * f0;
-      const px1 = seg.x1 + (seg.x2 - seg.x1) * f1;
-      const py1 = seg.y1 + (seg.y2 - seg.y1) * f1;
-
-      const a0 = Math.max(0, 1 - Math.abs(v0 - dist) / GLOW_HALF).toFixed(3);
-      const a1 = Math.max(0, 1 - Math.abs(v1 - dist) / GLOW_HALF).toFixed(3);
-
-      const id = `sg${surgeGlowId++}`;
-      const grad = document.createElementNS(NS, 'linearGradient');
-      grad.setAttribute('id', id); grad.setAttribute('gradientUnits', 'userSpaceOnUse');
-      grad.setAttribute('x1', px0); grad.setAttribute('y1', py0);
-      grad.setAttribute('x2', px1); grad.setAttribute('y2', py1);
-      const s0 = document.createElementNS(NS, 'stop');
-      s0.setAttribute('offset', '0'); s0.setAttribute('stop-color', '#1078f3'); s0.setAttribute('stop-opacity', a0);
-      const s1 = document.createElementNS(NS, 'stop');
-      s1.setAttribute('offset', '1'); s1.setAttribute('stop-color', '#1078f3'); s1.setAttribute('stop-opacity', a1);
-      grad.append(s0, s1);
-      sgDefsEl.appendChild(grad);
-
-      const line = document.createElementNS(NS, 'line');
-      line.setAttribute('x1', px0); line.setAttribute('y1', py0);
-      line.setAttribute('x2', px1); line.setAttribute('y2', py1);
-      line.setAttribute('stroke', `url(#${id})`);
-      line.setAttribute('stroke-width', '2.8');
-      line.setAttribute('stroke-linecap', 'round');
-      sug.appendChild(line);
-    }
-
-    d += seg.len;
-    if (d >= dE) break;
+      const circle = document.createElementNS(NS, 'circle');
+      circle.setAttribute('cx', String(x.toFixed(2)));
+      circle.setAttribute('cy', String(y.toFixed(2)));
+      circle.setAttribute('r', String(r.toFixed(2)));
+      circle.setAttribute('fill', '#d7d7d7');
+      
+      const op = ease * 0.9;
+      circle.setAttribute('opacity', op.toFixed(3));
+      grid.appendChild(circle);
+      gridCircles.push({ el: circle, x, y, baseR: r, baseOpacity: op });
+    });
   }
 }
 
-/* ── Initialize checked states and surges at start ─────────── */
+buildGrid();
+
+/* ── Surge glow — linearGradient window traveling along bezier ────
+   Matches ai-agent / data-flow gradient window style.
+   t = normalized progress (0–1). Gradient fades in at t-0.20,
+   peaks at t, fades out at t+0.20. Edge feather at 0–0.07 / 0.85–1. */
+function drawSurgeGlow(e) {
+  const t = e.surge.progressPx / e.arcLen;
+  if (t <= 0) return;
+
+  let edgeFade = 1;
+  if (t < 0.07) edgeFade = t / 0.07;
+  else if (t > 0.85) edgeFade = Math.max(0, (1 - t) / 0.15);
+
+  const opacity = (0.92 * edgeFade).toFixed(3);
+  const tClamped = Math.min(t, 1);
+  const start = Math.max(0, tClamped - 0.20);
+  const end   = Math.min(1, tClamped + 0.20);
+
+  const { x1, y1, x2, y2 } = getBezierCoords(e);
+
+  const gradId = `sg${surgeGlowId++}`;
+  const grad = document.createElementNS(NS, 'linearGradient');
+  grad.setAttribute('id', gradId);
+  grad.setAttribute('gradientUnits', 'userSpaceOnUse');
+  grad.setAttribute('x1', x1); grad.setAttribute('y1', y1);
+  grad.setAttribute('x2', x2); grad.setAttribute('y2', y2);
+
+  function mkStop(off, op) {
+    const s = document.createElementNS(NS, 'stop');
+    s.setAttribute('offset', off.toFixed(4));
+    s.setAttribute('stop-color', '#1078f3');
+    s.setAttribute('stop-opacity', op);
+    return s;
+  }
+  grad.appendChild(mkStop(0, 0));
+  if (start > 0.001) grad.appendChild(mkStop(start, 0));
+  grad.appendChild(mkStop(tClamped, opacity));
+  if (end < 0.999)   grad.appendChild(mkStop(end, 0));
+  grad.appendChild(mkStop(1, 0));
+  sdefs.appendChild(grad);
+
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', bezierPathD(e));
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', `url(#${gradId})`);
+  path.setAttribute('stroke-width', '3.2');
+  path.setAttribute('stroke-linecap', 'round');
+  sug.appendChild(path);
+}
+
+/* ── Initialize checked states and in-progress surges ── */
 nodes.forEach(n => {
   if (n.cx <= 337.5) {
     n.checked = true;
@@ -339,21 +415,32 @@ nodes.forEach(n => {
 edges.forEach(e => {
   let bx = e.toNode.cx;
   if (bx < e.fromNode.cx) bx += NT * TW;
-
   if (e.fromNode.cx <= 337.5 && bx > 337.5) {
     e.surge.active = true;
-    const bendX = e.fromNode.cx + e.dxBend;
-    let dist = 0;
-    if (337.5 < bendX) {
-      dist = 337.5 - e.fromNode.cx;
-    } else {
-      dist = (bendX - e.fromNode.cx) + Math.abs(e.toNode.cy - e.fromNode.cy) + (337.5 - bendX);
-    }
-    e.surge.progressPx = dist;
+    // Estimate progress as horizontal fraction × arc length
+    const fraction = (337.5 - e.fromNode.cx) / (bx - e.fromNode.cx);
+    e.surge.progressPx = fraction * e.arcLen;
   }
 });
 
-/* ── Animation Loop ─────────────────────────────────────────── */
+/* ── Animation Loop ── */
+const sv = document.getElementById('sv');
+let mx = -9999, my = -9999;
+function updateMouse(clientX, clientY) {
+  const r = sv.getBoundingClientRect();
+  mx = (clientX - r.left) / r.width * 675;
+  my = (clientY - r.top) / r.height * 323;
+}
+function resetMouse() {
+  mx = -9999;
+  my = -9999;
+}
+sv.addEventListener('mousemove', e => updateMouse(e.clientX, e.clientY));
+sv.addEventListener('pointermove', e => updateMouse(e.clientX, e.clientY));
+sv.addEventListener('mouseleave', resetMouse);
+sv.addEventListener('pointerleave', resetMouse);
+
+let hoverPulseOffset = 0;
 let off = 0;
 let lastTs = null;
 
@@ -362,22 +449,18 @@ function animate(ts) {
   const dt = Math.min((ts - lastTs) / 1000, 0.05);
   lastTs = ts;
 
-  // 1. Scroll track continuously
+  // 1. Scroll
   off += SCROLL_PPS * dt;
 
   if (off >= TW) {
     off -= TW;
-    nodes.forEach(n => {
-      n.cx -= TW;
-    });
+    nodes.forEach(n => { n.cx -= TW; });
 
     nodes.forEach(n => {
       if (n.cx < 0) {
         n.cx += NT * TW;
         n.checked = false;
         n.el.setAttribute('class', '');
-
-        // Clean up surges connected to recycled node
         edges.forEach(e => {
           if (e.fromNode === n || e.toNode === n) {
             e.surge.active = false;
@@ -390,13 +473,11 @@ function animate(ts) {
     buildLines();
   }
 
-  // Translate container
   cg.setAttribute('transform', `translate(${-off},0)`);
 
-  // 2. Propagation Logic: Trigger surges on outgoing edges when destination is in first 1/2 of frame
+  // 2. Trigger surges when destination enters left half of viewport
   edges.forEach(e => {
     if (e.fromNode.checked && !e.toNode.checked && !e.surge.active) {
-      // Trigger only when the destination node enters the first 1/2 of viewport (screen X <= 337.5)
       const destScreenX = e.toNode.cx - off;
       if (destScreenX <= 337.5) {
         e.surge.active = true;
@@ -405,75 +486,97 @@ function animate(ts) {
     }
   });
 
-  // 3. Advance active surges (they wait at the end of the edge if consensus is not met)
+  // 3. Advance surges
   edges.forEach(e => {
     if (e.surge.active) {
-      const L = getEdgeLength(e);
+      const L = e.arcLen;
       if (e.surge.progressPx < L) {
         e.surge.progressPx += e.surge.speed * dt;
-        if (e.surge.progressPx >= L) {
-          e.surge.progressPx = L;
-        }
+        if (e.surge.progressPx >= L) e.surge.progressPx = L;
       }
     }
   });
 
-  // 4. Consensus Check: Nodes become checked only when ALL incoming active edges have their surges arrived
+  // 4. Consensus: check node only when all incoming surges arrived
   nodes.forEach(n => {
     if (!n.checked) {
       const incoming = edges.filter(e => e.toNode === n);
       if (incoming.length > 0) {
-        const allArrived = incoming.every(e => e.surge.active && e.surge.progressPx >= getEdgeLength(e));
+        const allArrived = incoming.every(e => e.surge.active && e.surge.progressPx >= e.arcLen);
         if (allArrived) {
           n.checked = true;
           n.el.setAttribute('class', 'chk');
-
-          // Deactivate the completed incoming surges
-          incoming.forEach(e => {
-            e.surge.active = false;
-            e.surge.progressPx = 0;
-          });
+          incoming.forEach(e => { e.surge.active = false; e.surge.progressPx = 0; });
         }
       }
     }
   });
 
-  // 5. Update active cyan lines path geometry
-  edges.forEach(e => {
-    let bx = e.toNode.cx;
-    if (bx < e.fromNode.cx) bx += NT * TW;
 
-    if (e.surge.active) {
-      const dist = e.surge.progressPx;
-      const x1 = e.fromNode.cx;
-      const y1 = e.fromNode.cy;
-      const y2 = e.toNode.cy;
-      const bendX = x1 + e.dxBend;
-      const L1 = bendX - x1;
-      const L2 = Math.abs(y2 - y1);
 
-      let d = '';
-      if (dist <= L1) {
-        d = `M${x1} ${y1}H${x1 + dist}`;
-      } else if (dist > L1 && dist <= L1 + L2) {
-        const dy = dist - L1;
-        const y_curr = y1 + (y2 > y1 ? dy : -dy);
-        d = `M${x1} ${y1}H${bendX}V${y_curr}`;
-      } else {
-        const dx = dist - L1 - L2;
-        d = `M${x1} ${y1}H${bendX}V${y2}H${bendX + dx}`;
+  // 6. Gradient glow window (rebuilt every frame — matches ai-agent/data-flow style)
+  sug.innerHTML = '';
+  sdefs.innerHTML = '';
+  surgeGlowId = 0;
+  edges.forEach(e => { if (e.surge.active) drawSurgeGlow(e); });
+
+  // 7. Update hover states and apply scaling and expanding pulse animation
+  hoverPulseOffset = (hoverPulseOffset + dt * 0.32) % 1;
+  const kHoverRise = 1 - Math.pow(0.003, dt);
+  const kHoverFall = 1 - Math.pow(0.030, dt);
+  nodes.forEach(n => {
+    let activeTgt = n.hoverTgt;
+
+    // Pulse node like hovered during data flow traversal
+    const surgeClose = edges.some(e => {
+      if (!e.surge.active) return false;
+      if (e.fromNode === n) {
+        return (e.surge.progressPx / e.arcLen) < 0.20;
       }
-      e.cyanEl.setAttribute('d', d);
-    } else if (e.toNode.checked) {
-      e.cyanEl.setAttribute('d', lPathD(e));
-    } else {
-      e.cyanEl.setAttribute('d', '');
-    }
+      if (e.toNode === n) {
+        return (e.surge.progressPx / e.arcLen) > 0.80;
+      }
+      return false;
+    });
+    if (surgeClose) activeTgt = 1;
+
+    n.hover += (activeTgt - n.hover) * (activeTgt > n.hover ? kHoverRise : kHoverFall);
+
+    // Apply scale to node body
+    const sc = 1 + 0.08 * n.hover;
+    n.bodyEl.style.transform = `scale(${sc})`;
+
+    // Apply pulse animation to both rings
+    n.pulseEls.forEach((pulse, i) => {
+      const raw = (hoverPulseOffset + i * 0.5) % 1;
+      const scaleVal = 1.15 + raw * 2.0;
+      const opacityVal = (1 - raw) * 0.11 * n.hover;
+      pulse.style.transform = `scale(${scaleVal})`;
+      pulse.style.opacity = opacityVal;
+    });
   });
 
-  sug.innerHTML = '';
-  sgDefsEl.innerHTML = '';
-  surgeGlowId = 0;
+  // 8. Update grid circle hover proximity scaling
+  const mxGrid = mx + off;
+  gridCircles.forEach(c => {
+    const screenX = c.x - off;
+    if (screenX < -40 || screenX > 715) return;
+
+    const dx = c.x - mxGrid;
+    const dy = c.y - my;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    let scale = 1.0;
+    let opacityScale = 1.0;
+    if (dist < 130) {
+      const u = 1 - dist / 130;
+      scale += 1.8 * u;
+      opacityScale += 0.5 * u;
+    }
+    const targetR = c.baseR * scale;
+    const targetOpacity = Math.min(1.0, c.baseOpacity * opacityScale);
+    c.el.setAttribute('r', targetR.toFixed(2));
+    c.el.setAttribute('opacity', targetOpacity.toFixed(3));
+  });
 
   requestAnimationFrame(animate);
 }

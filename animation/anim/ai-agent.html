@@ -6,7 +6,26 @@
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     html { width:100%; height:100%; background:rgba(255,255,255,0.01); }
-    body { width:100%; height:100%; overflow:hidden; background:transparent; }
+    body {
+      width:100%; height:100%; overflow:hidden; background:transparent;
+      position:relative;
+    }
+    body::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; bottom: 0; width: 15%;
+      background: linear-gradient(to right, #fff 0%, rgba(255,255,255,0) 100%);
+      pointer-events: none;
+      z-index: 10;
+    }
+    body::after {
+      content: '';
+      position: absolute;
+      top: 0; right: 0; bottom: 0; width: 15%;
+      background: linear-gradient(to left, #fff 0%, rgba(255,255,255,0) 100%);
+      pointer-events: none;
+      z-index: 10;
+    }
     canvas { display:block; width:100%; height:100%; background:transparent; }
   </style>
 </head>
@@ -30,40 +49,75 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// ── Grid composition: master center, 3 left agents, 3 right agents ──
-// Paths fan left and right from center — never cross.
-// Straight bezier = no unnecessary curvature (hub-and-spoke guarantee).
+// Layout: 2 group containers on left (2 nodes each) → center hub → 3 individual right nodes.
+// Left nodes (0-3) initiate → center processes → right nodes (4-6) receive response.
 
-const CX = 450, CY = 250;
-const CENTER = { x: CX, y: CY, sz: 42, glow: 0, tgt: 0.3 };
+const CX = 450, CY = 252;
+const CENTER = { x: CX, y: CY, sz: 50, glow: 0, tgt: 0.3, hover: 0 };
 
 const NODES = [
-  { x: 155, y: 110, sz: 28, glow: 0, tgt: 0 }, // 0: left-top
-  { x: 155, y: 250, sz: 28, glow: 0, tgt: 0 }, // 1: left-mid
-  { x: 155, y: 390, sz: 28, glow: 0, tgt: 0 }, // 2: left-bottom
-  { x: 745, y: 110, sz: 28, glow: 0, tgt: 0 }, // 3: right-top
-  { x: 745, y: 250, sz: 28, glow: 0, tgt: 0 }, // 4: right-mid
-  { x: 745, y: 390, sz: 28, glow: 0, tgt: 0 }, // 5: right-bottom
+  { x: 140, y: 112, sz: 40, glow: 0, tgt: 0, hover: 0 }, // 0
+  { x: 140, y: 198, sz: 40, glow: 0, tgt: 0, hover: 0 }, // 1
+  { x: 140, y: 313, sz: 40, glow: 0, tgt: 0, hover: 0 }, // 2
+  { x: 140, y: 399, sz: 40, glow: 0, tgt: 0, hover: 0 }, // 3
+  { x: 755, y: 112, sz: 40, glow: 0, tgt: 0, hover: 0 }, // 4
+  { x: 755, y: 252, sz: 40, glow: 0, tgt: 0, hover: 0 }, // 5
+  { x: 755, y: 392, sz: 40, glow: 0, tgt: 0, hover: 0 }, // 6
 ];
 
-function mkPath(a, b) {
-  return {
-    p0: [a.x, a.y],
-    p1: [a.x + (b.x - a.x) / 3,   a.y + (b.y - a.y) / 3],
-    p2: [a.x + (b.x - a.x) * 2/3, a.y + (b.y - a.y) * 2/3],
-    p3: [b.x, b.y]
-  };
-}
+// ── Mouse tracking (logical VW×VH space) ──────────────────────────
+let hoverX = -9999, hoverY = -9999;
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  hoverX = (e.clientX - r.left) / r.width  * VW;
+  hoverY = (e.clientY - r.top)  / r.height * VH;
+});
+canvas.addEventListener('mouseleave', () => { hoverX = -9999; hoverY = -9999; });
+
+// Claude braille spinner — advances fast while DIGESTING, slow otherwise
+const SPINNER_FRAMES = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+let spinnerFrame = 0;
+let spinnerLastTs = 0;
+
+// Shared phase for hover pulse rings (all nodes share one advancing offset)
+let hoverPulseOffset = 0;
+
+// Group containers — drawn as backgrounds behind left nodes
+const GROUPS = [
+  { x: 72, y:  55, w: 136, h: 195, nodes: [0, 1] },
+  { x: 72, y: 260, w: 136, h: 195, nodes: [2, 3] },
+];
+
 function revPath(p) { return { p0: p.p3, p1: p.p2, p2: p.p1, p3: p.p0 }; }
 
-// PATHS[i]: node[i] → CENTER
-const PATHS = NODES.map(n => mkPath(n, CENTER));
+// Pointy-top hexagon path (vertex at top, clockwise)
+function hexPath(x, y, r) {
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI / 2 + (Math.PI / 3) * i;
+    const px = x + r * Math.cos(a), py = y + r * Math.sin(a);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+
+// Custom smooth bezier paths — left nodes use S-curves into center;
+// right nodes stored as right→center so revPath(PATHS[i]) gives center→right C-curves.
+const PATHS = [
+  { p0:[140,112], p1:[320,112], p2:[382,252], p3:[450,252] }, // 0 → center
+  { p0:[140,198], p1:[308,198], p2:[388,252], p3:[450,252] }, // 1 → center
+  { p0:[140,313], p1:[308,313], p2:[388,252], p3:[450,252] }, // 2 → center
+  { p0:[140,399], p1:[320,399], p2:[382,252], p3:[450,252] }, // 3 → center
+  { p0:[755,112], p1:[578,112], p2:[517,252], p3:[450,252] }, // center → 4 (reversed)
+  { p0:[755,252], p1:[630,252], p2:[510,252], p3:[450,252] }, // center → 5 (reversed)
+  { p0:[755,392], p1:[578,392], p2:[517,252], p3:[450,252] }, // center → 6 (reversed)
+];
 
 // ── Flow particle ──────────────────────────────────────────────────
 // ── SYNC SPEED ── ~2.9 s to traverse canvas at 60 fps
 // blockchain: SCROLL_PPS = 48 px/s, surge screen speed ≈ 70 px/s
 // data-flow:  PSPEED = 0.006/frame (slightly faster)
-const PSPEED = 0.0058;
+const PSPEED = 0.025;
 
 class Flow {
   constructor(ni, dir) {
@@ -76,8 +130,8 @@ class Flow {
     this.lw   = 3.2;
     this.path = dir === 1 ? PATHS[ni] : revPath(PATHS[ni]);
   }
-  tick() {
-    this.t += this.s;
+  tick(dt) {
+    this.t += this.s * (dt / 16.67);
     if (this.t >= 1.15) this.done = true;
   }
   alpha() {
@@ -113,9 +167,9 @@ class Conversation {
     busyPaths.add(ni);
   }
 
-  update(ts) {
+  update(ts, dt) {
     if (this.state === 'INCOMING') {
-      this.flow.tick();
+      this.flow.tick(dt);
       if (this.flow.done) {
         this.state = 'DIGESTING';
         this.timer = ts;
@@ -127,7 +181,7 @@ class Conversation {
         this.flow  = new Flow(this.ni, -1);
       }
     } else if (this.state === 'OUTGOING') {
-      this.flow.tick();
+      this.flow.tick(dt);
       if (this.flow.done) {
         busyPaths.delete(this.ni);
         nodeCooldown[this.ni] = ts + COOLDOWN_MS;
@@ -176,10 +230,10 @@ function drawBaseArc(path) {
   const x0 = path.p0[0]*sx, y0 = path.p0[1]*sy;
   const x1 = path.p3[0]*sx, y1 = path.p3[1]*sy;
   const g = ctx.createLinearGradient(x0, y0, x1, y1);
-  g.addColorStop(0,    'rgba(210,220,226,0)');
-  g.addColorStop(0.08, 'rgba(210,220,226,0.42)');
-  g.addColorStop(0.92, 'rgba(210,220,226,0.42)');
-  g.addColorStop(1,    'rgba(210,220,226,0)');
+  g.addColorStop(0,    'rgba(142,213,255,0)');
+  g.addColorStop(0.08, 'rgba(142,213,255,0.35)');
+  g.addColorStop(0.92, 'rgba(142,213,255,0.35)');
+  g.addColorStop(1,    'rgba(142,213,255,0)');
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(x0, y0);
@@ -230,66 +284,111 @@ function lerpRGBA(r0,g0,b0,a0, r1,g1,b1,a1, t) {
   return `rgba(${(r0+(r1-r0)*t+.5)|0},${(g0+(g1-g0)*t+.5)|0},${(b0+(b1-b0)*t+.5)|0},${(a0+(a1-a0)*t).toFixed(2)})`;
 }
 
-// ── Draw node ──────────────────────────────────────────────────────
+// ── Draw node — translate to node center, scale for hover ─────────
 function drawNode(n, isCenter) {
   const x  = n.x * sx, y = n.y * sy;
   const sz = n.sz * Math.min(sx, sy);
+  const sc = Math.min(sx, sy);
   const cr = sz * 0.25;
   const gl = Math.max(0, n.glow);
-
-  // All colors interpolate continuously — no threshold pop
-  const fillCol = lerpRGBA(255,255,255,1.00, 230,244,255,0.90, gl);
-  const ic      = lerpRGBA(200,213,222,0.75,  16,120,243,1.00, gl);
+  const hv = n.hover || 0;
 
   ctx.save();
+  ctx.translate(x, y);
+  if (hv > 0.001) ctx.scale(1 + 0.08 * hv, 1 + 0.08 * hv);
 
-  // Outer box
-  ctx.beginPath();
-  ctx.roundRect(x-sz, y-sz, sz*2, sz*2, cr);
-  ctx.fillStyle = fillCol;
-  ctx.fill();
-  {
-    const brd = ctx.createLinearGradient(x, y-sz, x, y+sz);
-    brd.addColorStop(0, lerpRGBA(200,213,222,0.60, 89,188,255,0.90, gl));
-    brd.addColorStop(1, lerpRGBA(200,213,222,0.60, 16,120,243,0.95, gl));
-    ctx.strokeStyle = brd;
-  }
-  ctx.lineWidth = (isCenter ? 1.6 : 1.2) * Math.min(sx, sy);
-  ctx.stroke();
-
-  // Inner ring
-  const ir = sz * 0.55;
-  ctx.beginPath();
-  ctx.roundRect(x-ir, y-ir, ir*2, ir*2, ir * 0.18);
-  {
-    const rng = ctx.createLinearGradient(x, y-ir, x, y+ir);
-    rng.addColorStop(0, lerpRGBA(200,213,222,0.55, 89,188,255,0.75, gl));
-    rng.addColorStop(1, lerpRGBA(200,213,222,0.55, 16,120,243,0.90, gl));
-    ctx.strokeStyle = rng;
-  }
-  ctx.lineWidth = 1.0 * Math.min(sx, sy);
-  ctx.stroke();
-
-  // Icon
-
-  if (isCenter) {
-    // Neural-net triangle mark
-    const u = sz * 0.30;
-    const pts = [[0,-u*1.05],[-u*0.92,u*0.60],[u*0.92,u*0.60]];
-    ctx.strokeStyle = ic; ctx.lineWidth = u*0.26; ctx.lineCap = 'round';
-    for (let i = 0; i < 3; i++) for (let j = i+1; j < 3; j++) {
+  // ── Hover pulse rings (drawn first so node sits on top) ──
+  if (hv > 0.001) {
+    const baseR = isCenter ? sz * 1.15 : sz;
+    for (let i = 0; i < 2; i++) {
+      const raw = (hoverPulseOffset + i * 0.5) % 1;
+      const pr = baseR * (1.15 + raw * 2.0);
+      const pa = (1 - raw) * 0.11 * hv;
       ctx.beginPath();
-      ctx.moveTo(x+pts[i][0], y+pts[i][1]);
-      ctx.lineTo(x+pts[j][0], y+pts[j][1]);
+      ctx.arc(0, 0, pr, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(16,120,243,${pa.toFixed(3)})`;
+      ctx.lineWidth = 1.3 * sc;
       ctx.stroke();
     }
+  }
+
+  // Three-stop blend: idle -> hover -> surge
+  // gl = active flow (surge), hv = hover
+  const u2 = gl;
+  const u1 = hv * (1 - gl);
+  const u0 = 1 - u1 - u2;
+
+  function b3(r0,g0,b0,a0, r1,g1,b1,a1, r2,g2,b2,a2) {
+    return `rgba(${(r0*u0+r1*u1+r2*u2+.5)|0},${(g0*u0+g1*u1+g2*u2+.5)|0},${(b0*u0+b1*u1+b2*u2+.5)|0},${(a0*u0+a1*u1+a2*u2).toFixed(2)})`;
+  }
+
+  // base: idle (255,255,255), hover (238,248,255), surge (230,244,255)
+  const fillCol = b3(255,255,255,1.00, 238,248,255,1.00, 230,244,255,0.90);
+  const ic      = b3(16,120,243,0.85,  16,120,243,1.00,  16,120,243,1.00);
+
+  const brdStart = b3(16,120,243,0.70,  16,120,243,0.95,  89,188,255,0.90);
+  const brdEnd   = b3(16,120,243,0.70,  16,120,243,0.95,  16,120,243,0.95);
+  const rngStart = b3(16,120,243,0.60,  16,120,243,0.90,  89,188,255,0.75);
+  const rngEnd   = b3(16,120,243,0.60,  16,120,243,0.90,  16,120,243,0.90);
+
+  if (isCenter) {
+    // ── Hexagon outer shell ──
+    const hr = sz * 1.15;
+    hexPath(0, 0, hr);
+    ctx.fillStyle = fillCol; ctx.fill();
+    {
+      const brd = ctx.createLinearGradient(0, -hr, 0, hr);
+      brd.addColorStop(0, brdStart);
+      brd.addColorStop(1, brdEnd);
+      ctx.strokeStyle = brd;
+    }
+    ctx.lineWidth = 1.8 * sc; ctx.stroke();
+
+    // ── Hexagon inner ring ──
+    const ihr = sz * 0.62;
+    hexPath(0, 0, ihr);
+    {
+      const rng = ctx.createLinearGradient(0, -ihr, 0, ihr);
+      rng.addColorStop(0, rngStart);
+      rng.addColorStop(1, rngEnd);
+      ctx.strokeStyle = rng;
+    }
+    ctx.lineWidth = 1.0 * sc; ctx.stroke();
+
+    // ── Claude braille spinner ──
+    const fontSize = Math.round(sz * 0.78);
+    ctx.font = `${fontSize}px monospace`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillStyle = ic;
-    pts.forEach(([px, py]) => { ctx.beginPath(); ctx.arc(x+px, y+py, u*0.26, 0, Math.PI*2); ctx.fill(); });
+    ctx.fillText(SPINNER_FRAMES[spinnerFrame], 0, sz * 0.04);
+
   } else {
-    // Square dot — matches blockchain node style
+    // ── Regular rounded-square node ──
+    ctx.beginPath();
+    ctx.roundRect(-sz, -sz, sz * 2, sz * 2, cr);
+    ctx.fillStyle = fillCol; ctx.fill();
+    {
+      const brd = ctx.createLinearGradient(0, -sz, 0, sz);
+      brd.addColorStop(0, brdStart);
+      brd.addColorStop(1, brdEnd);
+      ctx.strokeStyle = brd;
+    }
+    ctx.lineWidth = 1.2 * sc; ctx.stroke();
+
+    const ir = sz * 0.55;
+    ctx.beginPath();
+    ctx.roundRect(-ir, -ir, ir * 2, ir * 2, ir * 0.18);
+    {
+      const rng = ctx.createLinearGradient(0, -ir, 0, ir);
+      rng.addColorStop(0, rngStart);
+      rng.addColorStop(1, rngEnd);
+      ctx.strokeStyle = rng;
+    }
+    ctx.lineWidth = 1.0 * sc; ctx.stroke();
+
     const dr = sz * 0.22;
     ctx.beginPath();
-    ctx.rect(x - dr, y - dr, dr * 2, dr * 2);
+    ctx.rect(-dr, -dr, dr * 2, dr * 2);
     ctx.fillStyle = ic; ctx.fill();
   }
 
@@ -322,10 +421,50 @@ function frame(ts) {
   const dt = prevTs ? Math.min(ts-prevTs, 50) : 16;
   prevTs = ts;
 
-  pulseOffset = (pulseOffset + dt*0.00028) % 1;
+  pulseOffset      = (pulseOffset      + dt * 0.00028) % 1;
+  hoverPulseOffset = (hoverPulseOffset + dt * 0.00032) % 1;
+
+  // Update per-node hover lerp — asymmetric: fast rise (200ms), slow fall (600ms)
+  const kHoverRise = 1 - Math.pow(0.003, dt / 1000);
+  const kHoverFall = 1 - Math.pow(0.030, dt / 1000);
+  const allNodes = [CENTER, ...NODES];
+  allNodes.forEach((n, idx) => {
+    const dx = hoverX - n.x, dy = hoverY - n.y;
+    let tgt = Math.sqrt(dx*dx + dy*dy) < n.sz * 1.6 ? 1 : 0;
+
+    // Pulse node like hovered during data flow traversal
+    if (idx === 0) {
+      const flowActive = conversations.some(c => {
+        if (c.state === 'DIGESTING') return true;
+        if (c.state === 'INCOMING' && c.flow && c.flow.t > 0.80) return true;
+        if (c.state === 'OUTGOING' && c.flow && c.flow.t < 0.20) return true;
+        return false;
+      });
+      if (flowActive) tgt = 1;
+    } else {
+      const ni = idx - 1;
+      const flowActive = conversations.some(c => {
+        if (c.ni !== ni) return false;
+        if (c.state === 'INCOMING' && c.flow && c.flow.t < 0.20) return true;
+        if (c.state === 'OUTGOING' && c.flow && c.flow.t > 0.80) return true;
+        return false;
+      });
+      if (flowActive) tgt = 1;
+    }
+
+    n.hover += (tgt - n.hover) * (tgt > n.hover ? kHoverRise : kHoverFall);
+  });
+
+  // Spinner advances faster while master is actively thinking
+  const isDigesting = conversations.some(c => c.state === 'DIGESTING');
+  const spinInterval = isDigesting ? 75 : 180;
+  if (ts - spinnerLastTs >= spinInterval) {
+    spinnerFrame = (spinnerFrame + 1) % SPINNER_FRAMES.length;
+    spinnerLastTs = ts;
+  }
 
   trySpawn(ts);
-  conversations = conversations.filter(c => !c.update(ts));
+  conversations = conversations.filter(c => !c.update(ts, dt));
 
   computeGlowTargets();
   const k = 1 - Math.pow(0.018, dt/1000);
@@ -333,6 +472,39 @@ function frame(ts) {
   CENTER.glow += (CENTER.tgt-CENTER.glow)*k;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Subtle dot grid background with radial alpha mask and scale to 0 (using colorsGray300 = 215,215,215)
+  const gridSpacing = 36;
+  const cx = VW / 2, cy = VH / 2;
+  const maxDist = 800;
+  for (let x = gridSpacing / 2; x < VW; x += gridSpacing) {
+    for (let y = gridSpacing / 2; y < VH; y += gridSpacing) {
+      const dx = x - cx;
+      const dy = y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > maxDist) continue;
+      const f = 1 - dist / maxDist;
+      const ease = f;
+      let r = 2.25 * f * Math.min(sx, sy);
+      if (r < 0.1) continue;
+
+      // Hover proximity scaling: scale up near cursor
+      const dmx = x - hoverX;
+      const dmy = y - hoverY;
+      const mouseDist = Math.sqrt(dmx * dmx + dmy * dmy);
+      let dotOpacity = ease * 0.9;
+      if (mouseDist < 130) {
+        const u = 1 - mouseDist / 130;
+        r *= (1 + 1.8 * u);
+        dotOpacity = Math.min(1.0, dotOpacity * (1 + 0.5 * u));
+      }
+
+      ctx.fillStyle = `rgba(215,215,215,${dotOpacity.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(Math.round(x * sx), Math.round(y * sy), Math.round(r * 2) / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 
   PATHS.forEach(p => drawBaseArc(p));
   drawPulse(CENTER.glow);

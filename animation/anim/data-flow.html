@@ -15,6 +15,23 @@
       height: 100%;
       overflow: hidden;
       background: transparent;
+      position: relative;
+    }
+    body::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; bottom: 0; width: 15%;
+      background: linear-gradient(to right, #fff 0%, rgba(255,255,255,0) 100%);
+      pointer-events: none;
+      z-index: 10;
+    }
+    body::after {
+      content: '';
+      position: absolute;
+      top: 0; right: 0; bottom: 0; width: 15%;
+      background: linear-gradient(to left, #fff 0%, rgba(255,255,255,0) 100%);
+      pointer-events: none;
+      z-index: 10;
     }
     canvas { display:block; width:100%; height:100%; background: transparent; }
   </style>
@@ -25,39 +42,30 @@
 'use strict';
 
 // ── Coordinate space matches Figma frame 40011678:18924 (946 × 736) ──
-const VW = 946, VH = 736;
+const VW = 946, VH = 500;
 
 // Viewport pan: shift the camera so arcs enter at center-left (~1/3 from top)
 // rather than near the very top. VIEW_OFFSET_Y is subtracted from world-y
 // when converting screen → world for mouse, and added back at render time.
 // VH_VIS is the visible bottom in world space.
-const VIEW_OFFSET_Y = 220;
-const VH_VIS = VH - VIEW_OFFSET_Y; // = 516
+const VIEW_OFFSET_Y = 0;
+const VH_VIS = VH - VIEW_OFFSET_Y; // = 500
 
 // Single cubic bezier per arc — smooth throughout, no kink.
 // P0 = entry (left edge), P1 = long horizontal ctrl, P2 = convergence zone, P3 = exit (lower-right)
-const N_ARCS    = 20;
-const ENTRY_Y0  = -175;   // top arc entry  (≈ 6% screen height)
-const ENTRY_Y1  =  400;   // bottom arc entry (≈ 85% screen height)
+const N_ARCS    = 6;
+const ENTRY_Y0  =  90;   // top arc entry (48px padding + 42px node half-size)
+const ENTRY_Y1  =  410;   // bottom arc entry (48px padding + 42px node half-size)
 const P1X       =  420;   // ctrl-1 x — long horizontal start before bending
 const PINCH_X   =  620;   // convergence x ≈ 66% canvas width
-const PINCH_YC  =  200;   // convergence center y ≈ 57% screen height
-const PINCH_SPR =    5;   // y-gap between arcs at convergence (tight, 95 units total)
+const PINCH_YC  =  250;   // convergence center y (centered)
+const PINCH_SPR =   20;   // y-gap between arcs at convergence (widened for 6 arcs)
 const EXIT_X    =  920;   // exit near right edge
-const EXIT_YC   =  320;   // exit center — well below convergence (downward bias)
-const EXIT_SPR  =   16;   // y-gap at exit (304 units total — medium)
+const EXIT_YC   =  250;   // exit center (centered)
+const EXIT_SPR  =   62;   // y-gap at exit (widened for 6 arcs)
 
-// ── Physics ───────────────────────────────────────────────────────
-const N      = 52;
-const K_TENS = 0.055;
-const K_REST = 0.002;
-const DAMP   = 0.84;   // heavier material — oscillations die fast
-const CUR_R  = 195; // Increased by 50% for a wider, smoother hover deformation area (originally 130)
-const CUR_F  = 1.5; // Enhanced for a very strong, responsive bend effect (originally 0.43)
-
-// Reset mode (cursor left canvas) - match natural physics for organic settling
-const DAMP_RESET  = 0.84;   // natural damping
-const K_REST_RESET = 0.002;  // natural pull back (no aggressive snap)
+// ── Arc sampling resolution ───────────────────────────────────────
+const N = 52;
 
 // ── Build rest positions ──────────────────────────────────────────
 function mkNode(x, y){ return {x, y, vx:0, vy:0, rx:x, ry:y}; }
@@ -95,102 +103,28 @@ function resize(){
 window.addEventListener('resize', resize);
 resize();
 
-// ── Mouse (in logical VW×VH space) ───────────────────────────────
-let mx = -9999, my = -9999, resetting = false;
+// ── Mouse (for hover-triggered data pulses only) ──────────────────
+let mx = -9999, my = -9999;
 canvas.addEventListener('mousemove', e => {
   const r = canvas.getBoundingClientRect();
   mx = (e.clientX - r.left) * dpr / sx;
-  my = (e.clientY - r.top)  * dpr / sy - VIEW_OFFSET_Y; // world y
-  resetting = false;
+  my = (e.clientY - r.top)  * dpr / sy - VIEW_OFFSET_Y;
 });
-canvas.addEventListener('mouseleave', () => { mx = -9999; my = -9999; resetting = true; });
+canvas.addEventListener('mouseleave', () => { mx = -9999; my = -9999; });
 
-// ── Physics constants ─────────────────────────────────────────────
-const MAX_DEF = 26;   // Increased to allow deep, satisfying bending (originally 9)
-const MAX_V   = 2.2;  // Increased to allow natural, faster deflection velocities (originally 0.9)
-
-// ── Physics step ──────────────────────────────────────────────────
-function step(){
-  const damp = resetting ? DAMP_RESET  : DAMP;
-  const kr   = resetting ? K_REST_RESET : K_REST;
-
-  let settled = true;
-
-  for(const nodes of arcs){
-    for(let i = 1; i < nodes.length-1; i++){
-      const n = nodes[i], l = nodes[i-1], r = nodes[i+1];
-
-      const defX = n.x - n.rx, defY = n.y - n.ry;
-      const def  = Math.hypot(defX, defY);
-      if(def > 0.08) settled = false;
-
-      // Non-linear rest spring — stiffens near the ceiling
-      const stiffness = kr + (def > MAX_DEF*0.5 ? (def - MAX_DEF*0.5)*0.06 : 0);
-
-      let fx = (l.x + r.x - 2*n.x)*K_TENS - defX*stiffness;
-      let fy = (l.y + r.y - 2*n.y)*K_TENS - defY*stiffness;
-
-      // Breeze force — only while cursor is on canvas
-      if(!resetting){
-        const dx = n.x - mx, dy = n.y - my, d = Math.hypot(dx, dy);
-        if(d < CUR_R && d > 0.5){
-          const headroom = Math.max(0, 1 - def/MAX_DEF);
-          const s = (1 - d/CUR_R)**3 * CUR_F * headroom;
-          fx += dx/d * s;
-          fy += dy/d * s;
-        }
-      }
-
-      n.vx = (n.vx + fx)*damp;
-      n.vy = (n.vy + fy)*damp;
-
-      const v = Math.hypot(n.vx, n.vy);
-      if(v > MAX_V){ n.vx = n.vx/v*MAX_V; n.vy = n.vy/v*MAX_V; }
-
-      n.x += n.vx;
-      n.y += n.vy;
-
-      // Hard ceiling
-      const newDef = Math.hypot(n.x - n.rx, n.y - n.ry);
-      if(newDef > MAX_DEF){
-        const sc = MAX_DEF / newDef;
-        n.x = n.rx + (n.x - n.rx)*sc;
-        n.y = n.ry + (n.y - n.ry)*sc;
-        const dot = n.vx*(n.x-n.rx) + n.vy*(n.y-n.ry);
-        if(dot > 0){ n.vx *= 0.3; n.vy *= 0.3; }
-      }
-    }
-  }
-
-  if(resetting && settled) resetting = false;
-}
-
-// ── Deformation energy (drives subtle brightness) ─────────────────
-function energy(nodes){
-  let e = 0;
-  for(const n of nodes) e = Math.max(e, Math.hypot(n.x - n.rx, n.y - n.ry));
-  return Math.min(e / 8, 1);   // saturates at 8 SVG-unit deflection
-}
 
 // ── Render ────────────────────────────────────────────────────────
-// arcIdx 0..N_ARCS-1 — middle arcs (near N_ARCS/2) get thicker strokes and higher opacity
+// arcIdx 0..N_ARCS-1 — middle arcs get higher opacity (bell curve)
 function renderArc(nodes, arcIdx){
-  const e    = energy(nodes);
   const x0   = nodes[0].x * sx,              y0 = nodes[0].y * sy;
   const x1   = nodes[nodes.length-1].x * sx, y1 = nodes[nodes.length-1].y * sy;
 
-  // Prominence: bell curve peaking at the middle arc
   const mid  = (N_ARCS - 1) / 2;
-  const dist = Math.abs(arcIdx - mid) / mid;        // 0 = middle, 1 = edge
-  const prom = 1 - dist * dist;                      // 1 at center, 0 at edges
+  const dist = Math.abs(arcIdx - mid) / mid;
+  const prom = 1 - dist * dist;
 
-  // Default lines are a very soft, subtle light gray
-  // e: physics deflection makes them slightly darker/more visible
-  const rc  = (210 + (165 - 210) * e) | 0;
-  const gc  = (220 + (175 - 220) * e) | 0;
-  const bc  = (226 + (182 - 226) * e) | 0;
-  const col = `${rc},${gc},${bc}`;
-  const peak = (0.26 + prom * 0.16 + e * 0.15).toFixed(2);
+  const col  = '142,213,255';
+  const peak = (0.26 + prom * 0.16).toFixed(2);
 
   const grad = ctx.createLinearGradient(x0, y0, x1, y1);
   grad.addColorStop(0,    `rgba(${col},0)`);
@@ -200,7 +134,7 @@ function renderArc(nodes, arcIdx){
 
   ctx.save();
   ctx.strokeStyle = grad;
-  ctx.lineWidth   = 1.2 * Math.min(sx, sy);
+  ctx.lineWidth   = 2.2 * Math.min(sx, sy);
   ctx.lineCap     = 'round';
   ctx.beginPath();
   ctx.moveTo(x0, y0);
@@ -247,7 +181,7 @@ function drawFlow(nodes, t, arcIdx){
 
   ctx.save();
   ctx.strokeStyle = grad;
-  ctx.lineWidth   = 3.2 * Math.min(sx, sy);
+  ctx.lineWidth   = 2.2 * Math.min(sx, sy);   // synced to default base line thickness (2.2)
   ctx.lineCap     = 'round';
   ctx.beginPath();
   ctx.moveTo(x0, y0);
@@ -264,21 +198,25 @@ function drawFlow(nodes, t, arcIdx){
 // ── SYNC SPEED ── ~2.8 s to traverse canvas at 60 fps
 // blockchain: SCROLL_PPS = 48 px/s, surge screen speed ≈ 70 px/s
 // ai-agent:   PSPEED = 0.0058/frame (slightly slower)
-const PSPEED = 0.006;
+const PSPEED = 0.0095;
 let parts = [];
 
 // ── Wire nodes on strings ─────────────────────────────────────────
-// arc: single arc index. t: position along arc (0=entry, 1=exit).
-// 6 arcs spread evenly top→bottom, 1 node each near midpoint (staggered).
+// 6 arcs spread evenly top→bottom, 1 node each near midpoint (staggered organic depths)
 const WIRE_NODES = [
-  { arc: 1,  t: 0.43 },
-  { arc: 4,  t: 0.50 },
-  { arc: 8,  t: 0.46 },
-  { arc: 11, t: 0.52 },
-  { arc: 15, t: 0.44 },
-  { arc: 18, t: 0.49 },
+  { arc: 0, t: 0.22 },
+  { arc: 1, t: 0.55 },
+  { arc: 2, t: 0.33 },
+  { arc: 3, t: 0.66 },
+  { arc: 4, t: 0.44 },
+  { arc: 5, t: 0.77 },
 ];
-WIRE_NODES.forEach(wn => { wn.glow = 0; });
+WIRE_NODES.forEach(wn => {
+  wn.glow = 0;
+  wn.hover = 0;
+});
+
+let hoverPulseOffset = 0;
 
 function getPosOnArc(ai, t) {
   const nodes = arcs[ai];
@@ -296,26 +234,51 @@ function lerpRGBA(r0,g0,b0,a0, r1,g1,b1,a1, t) {
   return `rgba(${(r0+(r1-r0)*t+.5)|0},${(g0+(g1-g0)*t+.5)|0},${(b0+(b1-b0)*t+.5)|0},${(a0+(a1-a0)*t).toFixed(2)})`;
 }
 
-function drawWireNode(wx, wy, gl) {
+function drawWireNode(wx, wy, gl, hv) {
   const x  = wx * sx;
   const y  = wy * sy;
   const sc = Math.min(sx, sy);
-  const HSZ = 22 * sc;   // ≥ 75% of ai-agent node size
-  const CR  = 4.0 * sc;
-  const IR  = 11 * sc;
-  const CRI = 2.0 * sc;
-  const DR  = 5.0 * sc;
+  const HSZ = 32 * sc;
+  const CR  = 5.5 * sc;
+  const IR  = 16 * sc;
+  const CRI = 2.5 * sc;
+  const DR  = 7.0 * sc;
 
-  // All colors interpolate continuously — no threshold pop
-  const fillCol = lerpRGBA(255,255,255,1.00, 230,244,255,0.90, gl);
-  const brdCol  = lerpRGBA(200,213,222,0.60,  16,120,243,1.00, gl);
-  const ringCol = lerpRGBA(200,213,222,0.55,  16,120,243,0.85, gl);
-  const dotCol  = lerpRGBA(200,213,222,0.72,  16,120,243,1.00, gl);
+  // Three-stop blend: gray → secondary blue (hover) → primary blue (surge)
+  // Surge contribution dims hover so they don't double-stack
+  const u2 = gl;                   // primary blue from surge
+  const u1 = hv * (1 - gl);       // secondary blue from hover (dims when surge active)
+  const u0 = 1 - u1 - u2;
+
+  function b3(r0,g0,b0,a0, r1,g1,b1,a1, r2,g2,b2,a2) {
+    return `rgba(${(r0*u0+r1*u1+r2*u2+.5)|0},${(g0*u0+g1*u1+g2*u2+.5)|0},${(b0*u0+b1*u1+b2*u2+.5)|0},${(a0*u0+a1*u1+a2*u2).toFixed(2)})`;
+  }
+
+  const fillCol = b3(255,255,255,1.00, 238,248,255,1.00, 238,248,255,1.00);
+  const brdCol  = b3(16,120,243,0.70, 16,120,243,1.00,  16,120,243,1.00);
+  const ringCol = b3(16,120,243,0.60, 16,120,243,1.00,  89,188,255,0.90);
+  const dotCol  = b3(16,120,243,0.80, 16,120,243,1.00,  16,120,243,1.00);
 
   ctx.save();
+  ctx.translate(x, y);
+  if (hv > 0.001) ctx.scale(1 + 0.08 * hv, 1 + 0.08 * hv);
+
+  // Hover pulse rings (drawn behind node)
+  if (hv > 0.001) {
+    for (let i = 0; i < 2; i++) {
+      const raw = (hoverPulseOffset + i * 0.5) % 1;
+      const pr = HSZ * (1.15 + raw * 2.0);
+      const pa = (1 - raw) * 0.11 * hv;
+      ctx.beginPath();
+      ctx.arc(0, 0, pr, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(16,120,243,${pa.toFixed(3)})`;
+      ctx.lineWidth = 1.3 * sc;
+      ctx.stroke();
+    }
+  }
 
   ctx.beginPath();
-  ctx.roundRect(x - HSZ, y - HSZ, HSZ * 2, HSZ * 2, CR);
+  ctx.roundRect(-HSZ, -HSZ, HSZ * 2, HSZ * 2, CR);
   ctx.fillStyle   = fillCol;
   ctx.fill();
   ctx.strokeStyle = brdCol;
@@ -323,13 +286,13 @@ function drawWireNode(wx, wy, gl) {
   ctx.stroke();
 
   ctx.beginPath();
-  ctx.roundRect(x - IR, y - IR, IR * 2, IR * 2, CRI);
+  ctx.roundRect(-IR, -IR, IR * 2, IR * 2, CRI);
   ctx.strokeStyle = ringCol;
   ctx.lineWidth   = 1.0 * sc;
   ctx.stroke();
 
   ctx.beginPath();
-  ctx.rect(x - DR, y - DR, DR * 2, DR * 2);
+  ctx.rect(-DR, -DR, DR * 2, DR * 2);
   ctx.fillStyle = dotCol;
   ctx.fill();
 
@@ -348,69 +311,32 @@ class P {
     const n=arcs[this.ai], f=Math.max(0, Math.min(N-2, this.t*(N-1))), i=Math.min(0|f,N-2), r=f-i;
     return {x:n[i].x*(1-r)+n[i+1].x*r, y:n[i].y*(1-r)+n[i+1].y*r};
   }
-  tick(){ 
-    this.t += this.s * this.dir; 
+  tick(dt){ 
+    this.t += this.s * this.dir * (dt / 16.67); 
     if(this.dir === 1 && this.t >= 1.2) this.dead = true;
     if(this.dir === -1 && this.t <= -0.2) this.dead = true;
   }
 }
 
-// Seed a few arcs at staggered positions
-[0, 5, 10, 15, 19].forEach(ai => parts.push(new P(ai, 0.15 + ai * 0.04, 1)));
+// Seed 3 arcs at staggered positions
+[0, 2, 4].forEach((ai, idx) => parts.push(new P(ai, 0.10 + idx * 0.18, 1)));
 let lastSpawn = 0;
 let prevTs = 0;
-const hoverTriggered = Array(N_ARCS).fill(false);
 
 function frame(ts){
+  if (canvas.width !== canvas.clientWidth * dpr || canvas.height !== canvas.clientHeight * dpr) {
+    resize();
+  }
   const dt = prevTs > 0 ? Math.min(ts - prevTs, 50) : 16;
   prevTs = ts;
-  step();
 
-  // Interactive Hover Trigger logic: Trigger flows on the nearest 3 arcs
-  if (resetting) {
-    hoverTriggered.fill(false);
-  } else if (mx > -1000) {
-    const arcDistances = arcs.map((nodes, idx) => {
-      let minDist = Infinity;
-      for (let i = 0; i < nodes.length; i += 3) {
-        const d = Math.hypot(nodes[i].x - mx, nodes[i].y - my);
-        if (d < minDist) minDist = d;
-      }
-      return { idx, dist: minDist };
-    });
+  hoverPulseOffset = (hoverPulseOffset + dt * 0.00032) % 1;
 
-    arcDistances.sort((a, b) => a.dist - b.dist);
-
-    // Trigger the nearest 2-3 arcs if they are in range and not triggered yet
-    for (let i = 0; i < 3; i++) {
-      const item = arcDistances[i];
-      if (item && item.dist < 80) { // proximity trigger range
-        if (!hoverTriggered[item.idx]) {
-          // Calculate current progress (0 to 1) horizontally along the path based on cursor mx
-          const tStart = Math.min(1.0, Math.max(0.0, mx / EXIT_X));
-          
-          // Trigger a bidirectional split flow
-          parts.push(new P(item.idx, tStart, 1));  // Moves right
-          parts.push(new P(item.idx, tStart, -1)); // Moves left
-          
-          hoverTriggered[item.idx] = true;
-        }
-      }
-    }
-
-    // Reset trigger state for arcs that are now far away
-    arcDistances.forEach(item => {
-      if (item.dist > 150) { // reset threshold
-        hoverTriggered[item.idx] = false;
-      }
-    });
-  }
-
-  parts.forEach(p => p.tick());
+  parts.forEach(p => p.tick(dt));
   parts = parts.filter(p => !p.dead);
   
-  // Maintain 3-4 active flows with natural, aesthetic spacing
-  if(parts.length < 4){
+  // Maintain 2-3 active flows across 6 arcs
+  if(parts.length < 3){
     if(ts - lastSpawn > 400 + Math.random() * 800){ // min spacing to keep it looking paced
       const activeArcs = new Set(parts.map(p => p.ai));
       const availableArcs = Array.from({length: N_ARCS}, (_, i) => i).filter(i => !activeArcs.has(i));
@@ -425,6 +351,39 @@ function frame(ts){
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  // Subtle dot grid background with radial alpha mask and scale to 0 (using colorsGray300 = 215,215,215)
+  const gridSpacing = 36;
+  const cx = VW / 2, cy = VH / 2;
+  const maxDist = 800;
+  for (let x = gridSpacing / 2; x < VW; x += gridSpacing) {
+    for (let y = gridSpacing / 2; y < VH; y += gridSpacing) {
+      const dx = x - cx;
+      const dy = y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > maxDist) continue;
+      const f = 1 - dist / maxDist;
+      const ease = f;
+      let r = 2.25 * f * Math.min(sx, sy);
+      if (r < 0.1) continue;
+
+      // Hover proximity scaling: scale up near cursor
+      const dmx = x - mx;
+      const dmy = y - my;
+      const mouseDist = Math.sqrt(dmx * dmx + dmy * dmy);
+      let dotOpacity = ease * 0.9;
+      if (mouseDist < 130) {
+        const u = 1 - mouseDist / 130;
+        r *= (1 + 1.8 * u);
+        dotOpacity = Math.min(1.0, dotOpacity * (1 + 0.5 * u));
+      }
+
+      ctx.fillStyle = `rgba(215,215,215,${dotOpacity.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(Math.round(x * sx), Math.round(y * sy), Math.round(r * 2) / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   // Shift all rendering down by VIEW_OFFSET_Y logical units
   // so arcs appear to enter from center-left instead of near the top.
   ctx.save();
@@ -438,10 +397,13 @@ function frame(ts){
     drawFlow(arcs[p.ai], p.t, p.ai);
   }
 
-  // 3. Update wire node glow — fast rise, slow fall for smooth pulse feel
-  const kRise = 1 - Math.pow(0.003, dt / 1000);
-  const kFall = 1 - Math.pow(0.030, dt / 1000);
+  // 3. Update wire node glow and hover — asymmetric easing (fast rise, slow fall)
+  const kRise      = 1 - Math.pow(0.003, dt / 1000);
+  const kFall      = 1 - Math.pow(0.030, dt / 1000);
+  const kHoverRise = 1 - Math.pow(0.003, dt / 1000);
+  const kHoverFall = 1 - Math.pow(0.030, dt / 1000);
   for (const wn of WIRE_NODES) {
+    // glow from data surge proximity
     let tgt = 0;
     for (const p of parts) {
       if (p.ai === wn.arc) {
@@ -450,12 +412,23 @@ function frame(ts){
       }
     }
     wn.glow += (tgt - wn.glow) * (tgt > wn.glow ? kRise : kFall);
+
+    // hover from mouse proximity OR data flow proximity
+    const pos = getPosOnArc(wn.arc, wn.t);
+    const dx = mx - pos.x, dy = my - pos.y;
+    let htgt = Math.sqrt(dx*dx + dy*dy) < 55 ? 1 : 0;
+
+    // Pulse node like hovered during data flow traversal
+    const flowClose = parts.some(p => p.ai === wn.arc && Math.abs(p.t - wn.t) < 0.12);
+    if (flowClose) htgt = 1;
+
+    wn.hover += (htgt - wn.hover) * (htgt > wn.hover ? kHoverRise : kHoverFall);
   }
 
   // 4. Draw wire nodes on top of arcs
   for (const wn of WIRE_NODES) {
     const pos = getPosOnArc(wn.arc, wn.t);
-    drawWireNode(pos.x, pos.y, wn.glow);
+    drawWireNode(pos.x, pos.y, wn.glow, wn.hover);
   }
 
   ctx.restore(); // end viewport pan
