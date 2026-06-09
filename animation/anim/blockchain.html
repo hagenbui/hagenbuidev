@@ -6,10 +6,10 @@
   <title>Varmeta Blockchain Ledger</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
-    html, body {
+    html { width: 100%; height: 100%; background: #fff; }
+    body {
       width: 100%; height: 100%; overflow: hidden;
-      background: #fff;
-      display: flex; align-items: center; justify-content: center;
+      background: transparent;
       position: relative;
     }
     body::before {
@@ -28,18 +28,11 @@
       pointer-events: none;
       z-index: 10;
     }
-    .vp {
-      position: relative; width: 100%;
-      max-width: 900px;
-      aspect-ratio: 675 / 323; overflow: hidden;
-    }
-    canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    canvas { display: block; width: 100%; height: 100%; }
   </style>
 </head>
 <body>
-<div class="vp">
-  <canvas id="c"></canvas>
-</div>
+<canvas id="c"></canvas>
 
 <script>
 'use strict';
@@ -198,15 +191,10 @@ canvas.addEventListener('pointerleave',() => { mx = -9999; my = -9999; });
 const gridPositions = [];
 {
   const spacing = TW / 22;
-  const cy = VH / 2;
-  const rows = [cy];
-  for (let offset = spacing; cy - offset > 0; offset += spacing) {
-    rows.push(cy - offset);
-    rows.push(cy + offset);
-  }
-  rows.sort((a, b) => a - b);
   for (let x = spacing / 2; x < NT * TW; x += spacing) {
-    rows.forEach(y => gridPositions.push({ x, y }));
+    for (let y = spacing / 2; y < VH; y += spacing) {
+      gridPositions.push({ x, y });
+    }
   }
 }
 
