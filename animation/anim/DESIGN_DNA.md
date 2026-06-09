@@ -165,8 +165,10 @@ Same implementation across all animations. Pre-compute positions, draw each fram
 
 ```js
 // Spacing: 36px (data-flow / ai-agent), TW/22 (blockchain — matches tile width)
-// Radial fade from canvas center, maxDist = 800
-// Dot base radius = 2.25 * f * min(sx, sy), opacity = f * 0.9
+// Radial fade from canvas center, maxDist = 800 (or 600 for 675-wide space — same visual radius)
+// Dot base radius = 2.25 * (VW / 900) * f * min(sx, sy), opacity = f * 0.9
+//   → VW/900 normalizes to the 900-wide reference space so dots are the same
+//     physical CSS pixel size regardless of the animation's logical coordinate space.
 
 // Hover proximity scaling (mouse at (mx, my) in logical coords):
 if (dist < 130) {
