@@ -105,8 +105,8 @@ const BLEND_GLSL = `
       float fpos = uBlendTopF + (1.0 - screenT) * (1.0 - uBlendTopF);
       float Lbg = clamp((fpos - 0.55) / 0.40, 0.0, 1.0);
       vec3 baseCol = mix(vec3(1.0), BRAND_C, Lbg);
-      // White-only mode (topf sentinel > 1.5): force pure white regardless of bg
-      if (uBlendTopF > 1.5) baseCol = vec3(1.0);
+      // Soft secondary ice-blue mode (topf sentinel > 1.5): force soft light blue regardless of bg
+      if (uBlendTopF > 1.5) baseCol = mix(vec3(1.0), vec3(0.5569, 0.8353, 1.0), 0.45);
 `;
 const mouse = new THREE.Vector2(-999, -999);
 const targetMouse = new THREE.Vector2(-999, -999);
@@ -151,7 +151,7 @@ const gridMat = new THREE.ShaderMaterial({
       a *= smoothstep(0.0, 0.4, uReveal);
       if (a < 0.004) discard;
       ${BLEND_GLSL}
-      gl_FragColor = vec4(uBlend > 0.5 ? baseCol : uColor, a);
+      gl_FragColor = vec4(uBlend > 0.5 ? mix(baseCol, uColor, 0.35) : uColor, a);
     }
   `
 });
