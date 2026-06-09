@@ -118,19 +118,19 @@ canvas.addEventListener('mouseleave', () => { mx = -9999; my = -9999; });
 // Four stops: tertiary → secondary → light → transparent.
 // Drawn once per frame behind everything else.
 function drawBgGlow() {
-  const cx = PINCH_X * sx;
-  const cy = PINCH_YC * sy;
-  const rx = VW * 0.58 * sx;   // wide ellipse — spans most of canvas width
-  const ry = VH * 0.54 * sy;   // moderate height
+  const cx = (VW / 2) * sx;
+  const cy = (VH / 2) * sy;
+  const rx = VW * 0.58 * sx;
+  const ry = VH * 0.54 * sy;
 
   ctx.save();
   ctx.translate(cx, cy);
   ctx.scale(rx, ry);
 
   const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
-  g.addColorStop(0,    'rgba(89,188,255,0.07)');   // #59bcff — tertiary blue
-  g.addColorStop(0.30, 'rgba(142,213,255,0.045)'); // #8ed5ff — secondary blue
-  g.addColorStop(0.60, 'rgba(188,229,255,0.018)'); // #bce5ff — light blue
+  g.addColorStop(0,    'rgba(89,188,255,0.18)');   // #59bcff — tertiary blue
+  g.addColorStop(0.30, 'rgba(142,213,255,0.10)');  // #8ed5ff — secondary blue
+  g.addColorStop(0.60, 'rgba(188,229,255,0.04)');  // #bce5ff — light blue
   g.addColorStop(1,    'rgba(188,229,255,0)');      // transparent
 
   ctx.fillStyle = g;
