@@ -5,22 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Varmeta Blockchain Ledger</title>
   <style>
-    /* ── Camera Control ── */
-    :root {
-      --cam-perspective:        900px;
-      --cam-perspective-origin: 50% 50%;
-      --cam-rotateX:            0deg;
-      --cam-rotateZ:            0deg;
-      --cam-scale:              1.0;
-    }
-
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
     html, body {
       width: 100%; height: 100%; overflow: hidden;
       background: #fff;
       display: flex; align-items: center; justify-content: center;
-      perspective: var(--cam-perspective);
-      perspective-origin: var(--cam-perspective-origin);
       position: relative;
     }
     body::before {
@@ -43,151 +32,78 @@
       position: relative; width: 100%;
       max-width: 900px;
       aspect-ratio: 675 / 323; overflow: hidden;
-      transform: rotateX(var(--cam-rotateX)) rotateZ(var(--cam-rotateZ)) scale(var(--cam-scale));
-      transform-style: preserve-3d;
-      transform-origin: center center;
     }
-    svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-
-    /* ── Node visual states — solid token colors, no alpha fills ── */
-    .n-outer { fill: #ffffff; stroke: #1078f3; stroke-width: 1.2; transition: stroke .4s, fill .4s; }
-    .n-ring  { fill: none; stroke: #1078f3; stroke-width: 1.0;
-               transform-box: fill-box; transform-origin: center;
-               transition: stroke .4s, transform .4s ease; }
-    .n-dot   { fill: #1078f3; transform-box: fill-box; transform-origin: center;
-               transition: fill .4s, transform .4s ease; }
-
-    /* Hover — secondary blue tint; declared before .chk so verified nodes keep their colors */
-    #ng > g:hover .n-outer { fill: #eef8ff; stroke: #1078f3; }
-    #ng > g:hover .n-ring  { stroke: #1078f3; }
-    #ng > g:hover .n-dot   { fill: #1078f3; }
-
-    /* Verified state — same specificity as :hover, declared after so it wins on tied nodes */
-    #ng > g.chk .n-outer { fill: #1078f3; stroke: #1078f3; }
-    #ng > g.chk .n-ring  { stroke: #ffffff; transform: rotate(45deg); }
-    #ng > g.chk .n-dot   { fill: #ffffff; transform: rotate(45deg); }
-
-    /* ── Hover: scale + expanding pulse rings ── */
-
-    .node-body {
-      transform-box: fill-box;
-      transform-origin: center;
-    }
-
-    .n-pulse {
-      opacity: 0;
-      fill: none;
-      stroke: #1078f3;
-      stroke-width: 1.2;
-      transform-box: fill-box;
-      transform-origin: center;
-    }
+    canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
   </style>
 </head>
 <body>
 <div class="vp">
-  <svg id="sv" viewBox="0 0 675 323">
-    <g id="cg">
-      <g id="grid" pointer-events="none"></g>
-      <defs id="sdefs"></defs>
-      <defs id="baseDefs"></defs>
-      <g id="lg" pointer-events="none"></g>        <!-- base neutral gray curves -->
-      <g id="sug" pointer-events="none"></g>       <!-- surge glow particles -->
-      <g id="ng"></g>        <!-- node boxes -->
-    </g>
-  </svg>
+  <canvas id="c"></canvas>
 </div>
 
 <script>
-const NS = 'http://www.w3.org/2000/svg';
+'use strict';
 
+// ── DESIGN DNA (see anim/DESIGN_DNA.md) ──────────────────────────────
+// Travel color: #1078f3 (16,120,243)
+// Hover rise τ≈200ms → kRise = 1 - pow(0.003, dt_s)
+// Hover fall τ≈600ms → kFall = 1 - pow(0.030, dt_s)
+// Hover scale: 1 + 0.08*hv; pulse rings: α=(1-raw)*0.11*hv, scale=1.15+raw*2.0
+// Node blend: u2=gl (surge), u1=hv*(1-gl) (hover), u0=1-u1-u2 (idle)
+// Edge glow: ±0.20 gradient window, feather 0–7% / 85–100%, width 3.2
+// No threshold color jumps — all transitions use continuous lerp.
+
+function lerpRGBA(r0,g0,b0,a0, r1,g1,b1,a1, t) {
+  return `rgba(${(r0+(r1-r0)*t+.5)|0},${(g0+(g1-g0)*t+.5)|0},${(b0+(b1-b0)*t+.5)|0},${(a0+(a1-a0)*t).toFixed(2)})`;
+}
+
+// ── Canvas setup ─────────────────────────────────────────────────────
+const VW = 675, VH = 323;
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const dpr    = window.devicePixelRatio || 1;
+let sx = 1, sy = 1;
+
+function resize() {
+  canvas.width  = canvas.clientWidth  * dpr;
+  canvas.height = canvas.clientHeight * dpr;
+  sx = canvas.width  / VW;
+  sy = canvas.height / VH;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Layout ────────────────────────────────────────────────────────────
 const PAT = [
-  { id: 0, rx: 0,   ry: 161 },
-  { id: 1, rx: 153, ry: 71  },
+  { id: 0, rx:   0, ry: 161 },
+  { id: 1, rx: 153, ry:  71 },
   { id: 2, rx: 171, ry: 251 },
-  { id: 3, rx: 324, ry: 71  },
+  { id: 3, rx: 324, ry:  71 },
   { id: 4, rx: 400, ry: 161 },
   { id: 5, rx: 495, ry: 251 },
-  { id: 6, rx: 513, ry: 71  },
+  { id: 6, rx: 513, ry:  71 },
   { id: 7, rx: 666, ry: 161 },
 ];
-const TW  = 801;
-const NT  = 3;
-// ── SYNC SPEED ── surge screen speed ≈ SCROLL_PPS + 70 ≈ 70 px/s visible
+const TW  = 801;   // tile width (logical px, wider than VW for seamless loop)
+const NT  = 3;     // number of tiles
+
+// ── SYNC SPEED ── surge screen speed ≈ SCROLL_PPS + 460 ≈ 540 px/s visible
 const SCROLL_PPS = 80;
 
 let nodes = [];
 for (let t = 0; t < NT; t++) {
   PAT.forEach(p => {
-    nodes.push({ tile: t, id: p.id, cx: p.rx + t * TW, cy: p.ry, checked: false, el: null, hover: 0, hoverTgt: 0, bodyEl: null, pulseEls: [] });
+    nodes.push({
+      tile: t, id: p.id,
+      cx: p.rx + t * TW, cy: p.ry,
+      checked: false,
+      checkLerp: 0,   // 0 = unchecked, 1 = checked (smoothly lerped)
+      hover: 0, hoverTgt: 0,
+    });
   });
 }
 
-const cg       = document.getElementById('cg');
-const lg       = document.getElementById('lg');
-const ng       = document.getElementById('ng');
-const sug      = document.getElementById('sug');
-const sdefs    = document.getElementById('sdefs');
-const baseDefs = document.getElementById('baseDefs');
-let surgeGlowId = 0;
-
-/* ── SVG node factory ── */
-const SZ = 44, H = SZ / 2, IR = 11, ID = 5;
-
-function mkNode(n) {
-  const g = document.createElementNS(NS, 'g');
-  g.setAttribute('transform', `translate(${n.cx},${n.cy})`);
-
-  // Inner wrapper
-  const body = document.createElementNS(NS, 'g');
-  body.setAttribute('class', 'node-body');
-  n.bodyEl = body;
-
-  // Two expanding pulse rings
-  n.pulseEls = [];
-  for (let i = 0; i < 2; i++) {
-    const pulse = document.createElementNS(NS, 'circle');
-    pulse.setAttribute('cx', '0'); pulse.setAttribute('cy', '0');
-    pulse.setAttribute('r', String(H)); // base radius matching node bounds
-    pulse.setAttribute('class', `n-pulse n-pulse-${i}`);
-    body.appendChild(pulse);
-    n.pulseEls.push(pulse);
-  }
-
-  const outer = document.createElementNS(NS, 'rect');
-  outer.setAttribute('x', -H); outer.setAttribute('y', -H);
-  outer.setAttribute('width', SZ); outer.setAttribute('height', SZ);
-  outer.setAttribute('rx', '5'); outer.setAttribute('ry', '5');
-  outer.setAttribute('class', 'n-outer');
-  body.appendChild(outer);
-
-  const ring = document.createElementNS(NS, 'rect');
-  ring.setAttribute('x', -IR); ring.setAttribute('y', -IR);
-  ring.setAttribute('width', IR * 2); ring.setAttribute('height', IR * 2);
-  ring.setAttribute('rx', '2'); ring.setAttribute('ry', '2');
-  ring.setAttribute('class', 'n-ring');
-  body.appendChild(ring);
-
-  const dot = document.createElementNS(NS, 'rect');
-  dot.setAttribute('x', -ID); dot.setAttribute('y', -ID);
-  dot.setAttribute('width', ID * 2); dot.setAttribute('height', ID * 2);
-  dot.setAttribute('rx', '1'); dot.setAttribute('ry', '1');
-  dot.setAttribute('class', 'n-dot');
-  body.appendChild(dot);
-
-  g.appendChild(body);
-  ng.appendChild(g);
-
-  // Set up mouse hover event listeners
-  g.addEventListener('mouseenter', () => { n.hoverTgt = 1; });
-  g.addEventListener('mouseleave', () => { n.hoverTgt = 0; });
-
-  return g;
-}
-
-nodes.forEach(n => { n.el = mkNode(n); });
-
-/* ── Edge definitions (no bendX needed — bezier handles curves) ── */
+// ── Edge definitions ─────────────────────────────────────────────────
 const edgeDefs = [
   { from: 0, to: 1 },
   { from: 0, to: 2 },
@@ -210,35 +126,27 @@ for (let t = 0; t < NT; t++) {
       to: [d.isCrossTile ? nextT : t, d.to],
       isCrossTile: !!d.isCrossTile,
       fromNode: null, toNode: null,
-      arcLen: 0, cyanEl: null,
+      arcLen: 0,
       surge: { active: false, progressPx: 0, speed: 0 }
     });
   });
 }
 
-/* ── Bezier helpers ── */
+// ── Bezier helpers ────────────────────────────────────────────────────
 function getBezierCoords(e) {
   const a = e.fromNode, b = e.toNode;
   let bx = b.cx;
   if (bx < a.cx) bx += NT * TW;
   const dx = bx - a.cx;
-  const isHoriz = Math.abs(a.cy - b.cy) < 2;
   return {
-    x1: a.cx,  y1: a.cy,
+    x1: a.cx,              y1: a.cy,
     cx1: a.cx + dx * 0.45, cy1: a.cy,
     cx2: bx  - dx * 0.45, cy2: b.cy,
-    x2: bx,   y2: b.cy,
-    isHoriz
+    x2: bx,               y2: b.cy,
+    isHoriz: Math.abs(a.cy - b.cy) < 2
   };
 }
 
-function bezierPathD(e) {
-  const { x1, y1, cx1, cy1, cx2, cy2, x2, y2, isHoriz } = getBezierCoords(e);
-  if (isHoriz) return `M${x1} ${y1}H${x2}`;
-  return `M${x1} ${y1} C${cx1} ${cy1} ${cx2} ${cy2} ${x2} ${y2}`;
-}
-
-// Numerical arc-length of the cubic bezier (60-sample integration)
 function computeArcLen(e) {
   const { x1, y1, cx1, cy1, cx2, cy2, x2, y2, isHoriz } = getBezierCoords(e);
   if (isHoriz) return Math.abs(x2 - x1);
@@ -247,14 +155,13 @@ function computeArcLen(e) {
     const t = i / 60, mt = 1 - t;
     const x = mt*mt*mt*x1 + 3*mt*mt*t*cx1 + 3*mt*t*t*cx2 + t*t*t*x2;
     const y = mt*mt*mt*y1 + 3*mt*mt*t*cy1 + 3*mt*t*t*cy2 + t*t*t*y2;
-    const ddx = x - px, ddy = y - py;
-    len += Math.sqrt(ddx*ddx + ddy*ddy);
+    len += Math.sqrt((x - px) ** 2 + (y - py) ** 2);
     px = x; py = y;
   }
   return len;
 }
 
-/* ── Link nodes, compute arc lengths, setup surges ── */
+// ── Link edges and compute initial arc lengths ────────────────────────
 edges.forEach((e, idx) => {
   e.fromNode = nodes.find(n => n.tile === e.from[0] && n.id === e.from[1]);
   e.toNode   = nodes.find(n => n.tile === e.to[0]   && n.id === e.to[1]);
@@ -262,104 +169,118 @@ edges.forEach((e, idx) => {
   e.surge.speed = SCROLL_PPS + 460 + (Math.sin(idx * 1.7) + 1) * 12;
 });
 
-/* ── Build connection lines ── */
-function buildLines() {
-  lg.innerHTML = '';
-  baseDefs.innerHTML = '';
+// ── Initialize checked state and in-progress surges ───────────────────
+nodes.forEach(n => {
+  if (n.cx <= VW / 2) { n.checked = true; n.checkLerp = 1; }
+});
+edges.forEach(e => {
+  let bx = e.toNode.cx;
+  if (bx < e.fromNode.cx) bx += NT * TW;
+  if (e.fromNode.cx <= VW / 2 && bx > VW / 2) {
+    e.surge.active = true;
+    e.surge.progressPx = ((VW / 2 - e.fromNode.cx) / (bx - e.fromNode.cx)) * e.arcLen;
+  }
+});
 
-  edges.forEach(e => {
-    e.arcLen = computeArcLen(e); // refresh after tile recycle
-    const d = bezierPathD(e);
-    const coords = getBezierCoords(e);
-
-    // Create unique gradient ID for this edge instance
-    const grayGradId = `gg-${e.from[0]}-${e.from[1]}-${e.to[0]}-${e.to[1]}`;
-
-    // Gray base gradient
-    const grayGrad = document.createElementNS(NS, 'linearGradient');
-    grayGrad.setAttribute('id', grayGradId);
-    grayGrad.setAttribute('gradientUnits', 'userSpaceOnUse');
-    grayGrad.setAttribute('x1', String(coords.x1));
-    grayGrad.setAttribute('y1', String(coords.y1));
-    grayGrad.setAttribute('x2', String(coords.x2));
-    grayGrad.setAttribute('y2', String(coords.y2));
-
-    const stopsGray = [
-      { offset: '0%', color: '#8ed5ff', opacity: '0' },
-      { offset: '8%', color: '#8ed5ff', opacity: '0.35' },
-      { offset: '92%', color: '#8ed5ff', opacity: '0.35' },
-      { offset: '100%', color: '#8ed5ff', opacity: '0' }
-    ];
-    stopsGray.forEach(s => {
-      const stop = document.createElementNS(NS, 'stop');
-      stop.setAttribute('offset', s.offset);
-      stop.setAttribute('stop-color', s.color);
-      stop.setAttribute('stop-opacity', s.opacity);
-      grayGrad.appendChild(stop);
-    });
-    baseDefs.appendChild(grayGrad);
-
-    // Gray base curve
-    const elGray = document.createElementNS(NS, 'path');
-    elGray.setAttribute('d', d);
-    elGray.setAttribute('fill', 'none');
-    elGray.setAttribute('stroke', `url(#${grayGradId})`);
-    elGray.setAttribute('stroke-width', '1.2');
-    elGray.setAttribute('stroke-linecap', 'round');
-    lg.appendChild(elGray);
-  });
+// ── Mouse tracking (logical VW×VH space) ─────────────────────────────
+let mx = -9999, my = -9999;
+function updateMouse(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  mx = (clientX - r.left) / r.width  * VW;
+  my = (clientY - r.top)  / r.height * VH;
 }
+canvas.addEventListener('mousemove',   e => updateMouse(e.clientX, e.clientY));
+canvas.addEventListener('pointermove', e => updateMouse(e.clientX, e.clientY));
+canvas.addEventListener('mouseleave',  () => { mx = -9999; my = -9999; });
+canvas.addEventListener('pointerleave',() => { mx = -9999; my = -9999; });
 
-buildLines();
-
-const gridCircles = [];
-
-function buildGrid() {
-  const grid = document.getElementById('grid');
-  const VW = NT * TW;
-  const VH = 323;
+// ── Pre-compute dot grid positions (full tiled width, seamless loop) ──
+const gridPositions = [];
+{
+  const spacing = TW / 22;
   const cy = VH / 2;
-  const maxDistY = 300;
-  const gridSpacing = TW / 22; // exactly 22 columns per tile (approx. 36.4px) for seamless looping and matching spacing
-  
-  // Center rows vertically relative to cy
-  const rows = [];
-  rows.push(cy);
-  for (let offset = gridSpacing; cy - offset > 0; offset += gridSpacing) {
+  const rows = [cy];
+  for (let offset = spacing; cy - offset > 0; offset += spacing) {
     rows.push(cy - offset);
     rows.push(cy + offset);
   }
   rows.sort((a, b) => a - b);
-
-  for (let x = gridSpacing / 2; x < VW; x += gridSpacing) {
-    rows.forEach(y => {
-      const distY = Math.abs(y - cy);
-      const f = Math.max(0, 1 - distY / maxDistY);
-      const ease = f;
-      const r = 2.25 * f; // match 2.25 base radius of other animations
-      if (r < 0.1) return;
-
-      const circle = document.createElementNS(NS, 'circle');
-      circle.setAttribute('cx', String(x.toFixed(2)));
-      circle.setAttribute('cy', String(y.toFixed(2)));
-      circle.setAttribute('r', String(r.toFixed(2)));
-      circle.setAttribute('fill', '#d7d7d7');
-      
-      const op = ease * 0.9;
-      circle.setAttribute('opacity', op.toFixed(3));
-      grid.appendChild(circle);
-      gridCircles.push({ el: circle, x, y, baseR: r, baseOpacity: op });
-    });
+  for (let x = spacing / 2; x < NT * TW; x += spacing) {
+    rows.forEach(y => gridPositions.push({ x, y }));
   }
 }
 
-buildGrid();
+// ── Node geometry constants ───────────────────────────────────────────
+const SZ = 44, H = SZ / 2;   // outer box half-size
+const IR = 11;                 // inner ring half-size
+const ID = 5;                  // dot half-size
 
-/* ── Surge glow — linearGradient window traveling along bezier ────
-   Matches ai-agent / data-flow gradient window style.
-   t = normalized progress (0–1). Gradient fades in at t-0.20,
-   peaks at t, fades out at t+0.20. Edge feather at 0–0.07 / 0.85–1. */
-function drawSurgeGlow(e) {
+// ── Draw dot grid ─────────────────────────────────────────────────────
+function drawGrid(off) {
+  const scx = VW / 2, scy = VH / 2;
+  const maxDist = 600;
+  const mxWorld = mx + off;
+
+  gridPositions.forEach(c => {
+    const screenX = c.x - off;
+    if (screenX < -40 || screenX > VW + 40) return;
+
+    const sdx = screenX - scx, sdy = c.y - scy;
+    const f = Math.max(0, 1 - Math.sqrt(sdx * sdx + sdy * sdy) / maxDist);
+    if (f < 0.01) return;
+
+    let r = 2.25 * f;
+    let opacity = f * 0.9;
+
+    const dx = c.x - mxWorld, dy = c.y - my;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 130) {
+      const u = 1 - dist / 130;
+      r       *= (1 + 1.8 * u);
+      opacity  = Math.min(1.0, opacity * (1 + 0.5 * u));
+    }
+
+    ctx.fillStyle = `rgba(215,215,215,${opacity.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(
+      Math.round(screenX * sx),
+      Math.round(c.y * sy),
+      Math.round(r * Math.min(sx, sy) * 2) / 2,
+      0, Math.PI * 2
+    );
+    ctx.fill();
+  });
+}
+
+// ── Draw base edge (neutral gray gradient) ────────────────────────────
+function drawBaseEdge(e, off) {
+  const { x1, y1, cx1, cy1, cx2, cy2, x2, y2, isHoriz } = getBezierCoords(e);
+  const ox = -off;
+  const bx1 = (x1 + ox) * sx, by1 = y1 * sy;
+  const bcx1 = (cx1 + ox) * sx, bcy1 = cy1 * sy;
+  const bcx2 = (cx2 + ox) * sx, bcy2 = cy2 * sy;
+  const bx2 = (x2 + ox) * sx,  by2 = y2 * sy;
+
+  const grad = ctx.createLinearGradient(bx1, by1, bx2, by2);
+  grad.addColorStop(0,    'rgba(142,213,255,0)');
+  grad.addColorStop(0.08, 'rgba(142,213,255,0.35)');
+  grad.addColorStop(0.92, 'rgba(142,213,255,0.35)');
+  grad.addColorStop(1,    'rgba(142,213,255,0)');
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(bx1, by1);
+  if (isHoriz) ctx.lineTo(bx2, by2);
+  else         ctx.bezierCurveTo(bcx1, bcy1, bcx2, bcy2, bx2, by2);
+  ctx.strokeStyle = grad;
+  ctx.lineWidth   = 1.2 * Math.min(sx, sy);
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ── Draw surge glow (gradient window traveling along bezier) ──────────
+function drawSurgeGlow(e, off) {
   const t = e.surge.progressPx / e.arcLen;
   if (t <= 0) return;
 
@@ -367,79 +288,106 @@ function drawSurgeGlow(e) {
   if (t < 0.07) edgeFade = t / 0.07;
   else if (t > 0.85) edgeFade = Math.max(0, (1 - t) / 0.15);
 
-  const opacity = (0.92 * edgeFade).toFixed(3);
-  const tClamped = Math.min(t, 1);
-  const start = Math.max(0, tClamped - 0.20);
-  const end   = Math.min(1, tClamped + 0.20);
+  const opacity  = 0.92 * edgeFade;
+  const tClamp   = Math.min(t, 1);
+  const start    = Math.max(0, tClamp - 0.20);
+  const end      = Math.min(1, tClamp + 0.20);
 
-  const { x1, y1, x2, y2 } = getBezierCoords(e);
+  const { x1, y1, cx1, cy1, cx2, cy2, x2, y2, isHoriz } = getBezierCoords(e);
+  const ox = -off;
+  const bx1 = (x1 + ox) * sx, by1 = y1 * sy;
+  const bcx1 = (cx1 + ox) * sx, bcy1 = cy1 * sy;
+  const bcx2 = (cx2 + ox) * sx, bcy2 = cy2 * sy;
+  const bx2 = (x2 + ox) * sx,  by2 = y2 * sy;
 
-  const gradId = `sg${surgeGlowId++}`;
-  const grad = document.createElementNS(NS, 'linearGradient');
-  grad.setAttribute('id', gradId);
-  grad.setAttribute('gradientUnits', 'userSpaceOnUse');
-  grad.setAttribute('x1', x1); grad.setAttribute('y1', y1);
-  grad.setAttribute('x2', x2); grad.setAttribute('y2', y2);
+  const grad = ctx.createLinearGradient(bx1, by1, bx2, by2);
+  grad.addColorStop(0, 'rgba(16,120,243,0)');
+  if (start > 0.001) grad.addColorStop(start, 'rgba(16,120,243,0)');
+  grad.addColorStop(tClamp, `rgba(16,120,243,${opacity.toFixed(3)})`);
+  if (end < 0.999)   grad.addColorStop(end,   'rgba(16,120,243,0)');
+  grad.addColorStop(1, 'rgba(16,120,243,0)');
 
-  function mkStop(off, op) {
-    const s = document.createElementNS(NS, 'stop');
-    s.setAttribute('offset', off.toFixed(4));
-    s.setAttribute('stop-color', '#1078f3');
-    s.setAttribute('stop-opacity', op);
-    return s;
-  }
-  grad.appendChild(mkStop(0, 0));
-  if (start > 0.001) grad.appendChild(mkStop(start, 0));
-  grad.appendChild(mkStop(tClamped, opacity));
-  if (end < 0.999)   grad.appendChild(mkStop(end, 0));
-  grad.appendChild(mkStop(1, 0));
-  sdefs.appendChild(grad);
-
-  const path = document.createElementNS(NS, 'path');
-  path.setAttribute('d', bezierPathD(e));
-  path.setAttribute('fill', 'none');
-  path.setAttribute('stroke', `url(#${gradId})`);
-  path.setAttribute('stroke-width', '3.2');
-  path.setAttribute('stroke-linecap', 'round');
-  sug.appendChild(path);
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(bx1, by1);
+  if (isHoriz) ctx.lineTo(bx2, by2);
+  else         ctx.bezierCurveTo(bcx1, bcy1, bcx2, bcy2, bx2, by2);
+  ctx.strokeStyle = grad;
+  ctx.lineWidth   = 3.2 * Math.min(sx, sy);
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+  ctx.restore();
 }
 
-/* ── Initialize checked states and in-progress surges ── */
-nodes.forEach(n => {
-  if (n.cx <= 337.5) {
-    n.checked = true;
-    n.el.setAttribute('class', 'chk');
+// ── Draw node ─────────────────────────────────────────────────────────
+// Blockchain-specific states: unchecked (white/blue) → checked (blue/white rotated 45°)
+// checkLerp drives the transition continuously — no threshold jump.
+function drawNode(n, off, hoverPulseOffset) {
+  const screenX = n.cx - off;
+  const x = screenX * sx, y = n.cy * sy;
+  const sc = Math.min(sx, sy);
+  const hv = n.hover;
+  const cl = n.checkLerp;
+
+  ctx.save();
+  ctx.translate(x, y);
+  if (hv > 0.001) ctx.scale(1 + 0.08 * hv, 1 + 0.08 * hv);
+
+  // Hover pulse rings
+  if (hv > 0.001) {
+    for (let i = 0; i < 2; i++) {
+      const raw = (hoverPulseOffset + i * 0.5) % 1;
+      const pr  = H * sc * (1.15 + raw * 2.0);
+      const pa  = (1 - raw) * 0.11 * hv;
+      ctx.beginPath();
+      ctx.arc(0, 0, pr, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(16,120,243,${pa.toFixed(3)})`;
+      ctx.lineWidth = 1.2 * sc;
+      ctx.stroke();
+    }
   }
-});
 
-edges.forEach(e => {
-  let bx = e.toNode.cx;
-  if (bx < e.fromNode.cx) bx += NT * TW;
-  if (e.fromNode.cx <= 337.5 && bx > 337.5) {
-    e.surge.active = true;
-    // Estimate progress as horizontal fraction × arc length
-    const fraction = (337.5 - e.fromNode.cx) / (bx - e.fromNode.cx);
-    e.surge.progressPx = fraction * e.arcLen;
-  }
-});
+  const hSc  = H  * sc;
+  const irSc = IR * sc;
+  const idSc = ID * sc;
 
-/* ── Animation Loop ── */
-const sv = document.getElementById('sv');
-let mx = -9999, my = -9999;
-function updateMouse(clientX, clientY) {
-  const r = sv.getBoundingClientRect();
-  mx = (clientX - r.left) / r.width * 675;
-  my = (clientY - r.top) / r.height * 323;
+  // Color interpolation — all continuous, no if/else color switches
+  // Outer fill: white (idle) / #eef8ff (hover) → #1078f3 (checked)
+  const baseFill = hv > 0.001 ? [238, 248, 255] : [255, 255, 255];
+  const outerFill   = lerpRGBA(baseFill[0], baseFill[1], baseFill[2], 1, 16, 120, 243, 1, cl);
+  const ringStroke  = lerpRGBA(16, 120, 243, 1, 255, 255, 255, 1, cl);
+  const dotFill     = lerpRGBA(16, 120, 243, 1, 255, 255, 255, 1, cl);
+  const rot         = cl * Math.PI / 4;   // 0 → 45deg
+
+  // Outer rounded rect
+  ctx.beginPath();
+  ctx.roundRect(-hSc, -hSc, hSc * 2, hSc * 2, 5 * sc);
+  ctx.fillStyle   = outerFill;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(16,120,243,1)';
+  ctx.lineWidth   = 1.2 * sc;
+  ctx.stroke();
+
+  // Inner ring + dot (both rotate together on check)
+  ctx.save();
+  ctx.rotate(rot);
+
+  ctx.beginPath();
+  ctx.roundRect(-irSc, -irSc, irSc * 2, irSc * 2, 2 * sc);
+  ctx.strokeStyle = ringStroke;
+  ctx.lineWidth   = 1.0 * sc;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.roundRect(-idSc, -idSc, idSc * 2, idSc * 2, 1 * sc);
+  ctx.fillStyle = dotFill;
+  ctx.fill();
+
+  ctx.restore();
+  ctx.restore();
 }
-function resetMouse() {
-  mx = -9999;
-  my = -9999;
-}
-sv.addEventListener('mousemove', e => updateMouse(e.clientX, e.clientY));
-sv.addEventListener('pointermove', e => updateMouse(e.clientX, e.clientY));
-sv.addEventListener('mouseleave', resetMouse);
-sv.addEventListener('pointerleave', resetMouse);
 
+// ── Animation loop ─────────────────────────────────────────────────────
 let hoverPulseOffset = 0;
 let off = 0;
 let lastTs = null;
@@ -455,12 +403,11 @@ function animate(ts) {
   if (off >= TW) {
     off -= TW;
     nodes.forEach(n => { n.cx -= TW; });
-
     nodes.forEach(n => {
       if (n.cx < 0) {
-        n.cx += NT * TW;
-        n.checked = false;
-        n.el.setAttribute('class', '');
+        n.cx       += NT * TW;
+        n.checked   = false;
+        n.checkLerp = 0;
         edges.forEach(e => {
           if (e.fromNode === n || e.toNode === n) {
             e.surge.active = false;
@@ -468,18 +415,14 @@ function animate(ts) {
           }
         });
       }
-      n.el.setAttribute('transform', `translate(${n.cx},${n.cy})`);
     });
-    buildLines();
+    edges.forEach(e => { e.arcLen = computeArcLen(e); });
   }
 
-  cg.setAttribute('transform', `translate(${-off},0)`);
-
-  // 2. Trigger surges when destination enters left half of viewport
+  // 2. Trigger surges when destination node enters left half of viewport
   edges.forEach(e => {
     if (e.fromNode.checked && !e.toNode.checked && !e.surge.active) {
-      const destScreenX = e.toNode.cx - off;
-      if (destScreenX <= 337.5) {
+      if (e.toNode.cx - off <= VW / 2) {
         e.surge.active = true;
         e.surge.progressPx = 0;
       }
@@ -489,93 +432,61 @@ function animate(ts) {
   // 3. Advance surges
   edges.forEach(e => {
     if (e.surge.active) {
-      const L = e.arcLen;
-      if (e.surge.progressPx < L) {
-        e.surge.progressPx += e.surge.speed * dt;
-        if (e.surge.progressPx >= L) e.surge.progressPx = L;
-      }
+      e.surge.progressPx += e.surge.speed * dt;
+      if (e.surge.progressPx > e.arcLen) e.surge.progressPx = e.arcLen;
     }
   });
 
-  // 4. Consensus: check node only when all incoming surges arrived
+  // 4. Consensus: check node only when ALL incoming surges have arrived
   nodes.forEach(n => {
     if (!n.checked) {
       const incoming = edges.filter(e => e.toNode === n);
-      if (incoming.length > 0) {
-        const allArrived = incoming.every(e => e.surge.active && e.surge.progressPx >= e.arcLen);
-        if (allArrived) {
-          n.checked = true;
-          n.el.setAttribute('class', 'chk');
-          incoming.forEach(e => { e.surge.active = false; e.surge.progressPx = 0; });
-        }
+      if (incoming.length > 0 && incoming.every(e => e.surge.active && e.surge.progressPx >= e.arcLen)) {
+        n.checked = true;
+        incoming.forEach(e => { e.surge.active = false; e.surge.progressPx = 0; });
       }
     }
   });
 
-
-
-  // 6. Gradient glow window (rebuilt every frame — matches ai-agent/data-flow style)
-  sug.innerHTML = '';
-  sdefs.innerHTML = '';
-  surgeGlowId = 0;
-  edges.forEach(e => { if (e.surge.active) drawSurgeGlow(e); });
-
-  // 7. Update hover states and apply scaling and expanding pulse animation
+  // 5. Update hover and checkLerp
   hoverPulseOffset = (hoverPulseOffset + dt * 0.32) % 1;
   const kHoverRise = 1 - Math.pow(0.003, dt);
   const kHoverFall = 1 - Math.pow(0.030, dt);
-  nodes.forEach(n => {
-    let activeTgt = n.hoverTgt;
+  const kCheck     = 1 - Math.pow(0.005, dt);
 
-    // Pulse node like hovered during data flow traversal
+  nodes.forEach(n => {
+    // Mouse proximity
+    const dx = (n.cx - off) - mx, dy = n.cy - my;
+    let tgt = Math.sqrt(dx * dx + dy * dy) < H * 1.6 ? 1 : 0;
+
+    // Pulse node like hovered when a surge is near either endpoint
     const surgeClose = edges.some(e => {
       if (!e.surge.active) return false;
-      if (e.fromNode === n) {
-        return (e.surge.progressPx / e.arcLen) < 0.20;
-      }
-      if (e.toNode === n) {
-        return (e.surge.progressPx / e.arcLen) > 0.80;
-      }
+      if (e.fromNode === n) return (e.surge.progressPx / e.arcLen) < 0.20;
+      if (e.toNode   === n) return (e.surge.progressPx / e.arcLen) > 0.80;
       return false;
     });
-    if (surgeClose) activeTgt = 1;
+    if (surgeClose) tgt = 1;
 
-    n.hover += (activeTgt - n.hover) * (activeTgt > n.hover ? kHoverRise : kHoverFall);
+    n.hover += (tgt - n.hover) * (tgt > n.hover ? kHoverRise : kHoverFall);
 
-    // Apply scale to node body
-    const sc = 1 + 0.08 * n.hover;
-    n.bodyEl.style.transform = `scale(${sc})`;
-
-    // Apply pulse animation to both rings
-    n.pulseEls.forEach((pulse, i) => {
-      const raw = (hoverPulseOffset + i * 0.5) % 1;
-      const scaleVal = 1.15 + raw * 2.0;
-      const opacityVal = (1 - raw) * 0.11 * n.hover;
-      pulse.style.transform = `scale(${scaleVal})`;
-      pulse.style.opacity = opacityVal;
-    });
+    const clTgt = n.checked ? 1 : 0;
+    n.checkLerp += (clTgt - n.checkLerp) * kCheck;
   });
 
-  // 8. Update grid circle hover proximity scaling
-  const mxGrid = mx + off;
-  gridCircles.forEach(c => {
-    const screenX = c.x - off;
-    if (screenX < -40 || screenX > 715) return;
+  // 6. Draw
+  if (canvas.width !== canvas.clientWidth * dpr || canvas.height !== canvas.clientHeight * dpr) resize();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const dx = c.x - mxGrid;
-    const dy = c.y - my;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    let scale = 1.0;
-    let opacityScale = 1.0;
-    if (dist < 130) {
-      const u = 1 - dist / 130;
-      scale += 1.8 * u;
-      opacityScale += 0.5 * u;
-    }
-    const targetR = c.baseR * scale;
-    const targetOpacity = Math.min(1.0, c.baseOpacity * opacityScale);
-    c.el.setAttribute('r', targetR.toFixed(2));
-    c.el.setAttribute('opacity', targetOpacity.toFixed(3));
+  drawGrid(off);
+
+  edges.forEach(e => drawBaseEdge(e, off));
+  edges.forEach(e => { if (e.surge.active) drawSurgeGlow(e, off); });
+
+  nodes.forEach(n => {
+    const screenX = n.cx - off;
+    if (screenX < -(H + 10) || screenX > VW + H + 10) return;
+    drawNode(n, off, hoverPulseOffset);
   });
 
   requestAnimationFrame(animate);
