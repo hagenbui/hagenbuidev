@@ -113,6 +113,33 @@ canvas.addEventListener('mousemove', e => {
 canvas.addEventListener('mouseleave', () => { mx = -9999; my = -9999; });
 
 
+// ── Background ellipse glow ───────────────────────────────────────
+// Quaternary radial gradient centered on the arc convergence zone.
+// Four stops: tertiary → secondary → light → transparent.
+// Drawn once per frame behind everything else.
+function drawBgGlow() {
+  const cx = PINCH_X * sx;
+  const cy = PINCH_YC * sy;
+  const rx = VW * 0.58 * sx;   // wide ellipse — spans most of canvas width
+  const ry = VH * 0.54 * sy;   // moderate height
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(rx, ry);
+
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+  g.addColorStop(0,    'rgba(89,188,255,0.07)');   // #59bcff — tertiary blue
+  g.addColorStop(0.30, 'rgba(142,213,255,0.045)'); // #8ed5ff — secondary blue
+  g.addColorStop(0.60, 'rgba(188,229,255,0.018)'); // #bce5ff — light blue
+  g.addColorStop(1,    'rgba(188,229,255,0)');      // transparent
+
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, 1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 // ── Render ────────────────────────────────────────────────────────
 // arcIdx 0..N_ARCS-1 — middle arcs get higher opacity (bell curve)
 function renderArc(nodes, arcIdx){
@@ -350,6 +377,7 @@ function frame(ts){
   }
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawBgGlow();
 
   // Subtle dot grid background with radial alpha mask and scale to 0 (using colorsGray300 = 215,215,215)
   const gridSpacing = 36;
