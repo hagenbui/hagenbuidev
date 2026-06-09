@@ -414,6 +414,30 @@ function drawPulse(glow) {
   }
 }
 
+// ── Background ellipse glow ───────────────────────────────────────
+function drawBgGlow() {
+  const cx = (VW / 2) * sx;
+  const cy = (VH / 2) * sy;
+  const rx = VW * 0.75 * sx;
+  const ry = VH * 0.50 * sy;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(rx, ry);
+
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+  g.addColorStop(0,    'rgba(89,188,255,0.10)');
+  g.addColorStop(0.40, 'rgba(142,213,255,0.07)');
+  g.addColorStop(0.72, 'rgba(188,229,255,0.025)');
+  g.addColorStop(1,    'rgba(188,229,255,0)');
+
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, 1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 // ── Main loop ──────────────────────────────────────────────────────
 let prevTs = null;
 
@@ -472,6 +496,7 @@ function frame(ts) {
   CENTER.glow += (CENTER.tgt-CENTER.glow)*k;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawBgGlow();
 
   // Subtle dot grid background with radial alpha mask and scale to 0 (using colorsGray300 = 215,215,215)
   const gridSpacing = 36;
