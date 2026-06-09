@@ -499,7 +499,7 @@ function frame(ts) {
         dotOpacity = Math.min(1.0, dotOpacity * (1 + 0.5 * u));
       }
 
-      ctx.fillStyle = `rgba(215,215,215,${dotOpacity.toFixed(3)})`;
+      ctx.fillStyle = `rgba(142,213,255,${dotOpacity.toFixed(3)})`;
       ctx.beginPath();
       ctx.arc(Math.round(x * sx), Math.round(y * sy), Math.round(r * 2) / 2, 0, Math.PI * 2);
       ctx.fill();

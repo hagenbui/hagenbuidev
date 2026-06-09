@@ -35,7 +35,7 @@ resize();
 | Secondary blue | `#8ed5ff` | `142,213,255` | Base edge gradient |
 | Hover tint | `#eef8ff` | `238,248,255` | Node fill on hover |
 | Surge tint | `#e6f4ff` | `230,244,255` | Node fill during surge |
-| Dot grid | `#d7d7d7` | `215,215,215` | Background grid dots |
+| Dot grid | `#8ed5ff` | `142,213,255` | Background grid dots |
 
 ---
 
