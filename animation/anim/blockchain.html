@@ -229,7 +229,7 @@ function drawGrid(off) {
     const f = Math.max(0, 1 - Math.sqrt(sdx * sdx + sdy * sdy) / maxDist);
     if (f < 0.01) return;
 
-    let r = 2.25 * f;
+    let r = 2.25 * (VW / 900) * f;   // normalize to 900-wide reference space
     let opacity = f * 0.9;
 
     const dx = c.x - mxWorld, dy = c.y - my;
