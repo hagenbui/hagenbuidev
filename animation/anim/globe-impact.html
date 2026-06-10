@@ -76,12 +76,8 @@
     display: flex; align-items: center; justify-content: center;
     pointer-events: auto; cursor: pointer;
   }
-  .varmeta-dot-logo { display: block; width: 16.072px; height: 12px; }
   .marker-dot .diamond-inner { width: 6px; height: 6px; position: absolute; background: #1078f3; transform: rotate(45deg); }
   .marker-dot .diamond-outer { width: 12px; height: 12px; position: absolute; border: 1px solid #1078f3; transform: rotate(45deg); }
-  /* Varmeta hub dot — 25% larger */
-  .globe-marker.varmeta .marker-dot { width: 20px; height: 20px; }
-  .globe-marker.varmeta .varmeta-dot-logo { width: 20.09px; height: 15px; }
   /* Card: floats above dot with 8px gap; hidden until state-2 */
   .marker-card {
     position: absolute;
@@ -132,10 +128,6 @@
   /* Diamonds inside card icon */
   .marker-icon .diamond-inner { position: absolute; background: #1078f3; transform: rotate(45deg); width: 14px; height: 14px; }
   .marker-icon .diamond-outer { position: absolute; border: 1px solid #1078f3; transform: rotate(45deg); width: 26px; height: 26px; }
-  /* Varmeta logo inside card icon (state-2 sizing per Figma 3875) */
-  .varmeta-logo { display: block; position: absolute; filter: brightness(0) invert(1); }
-  .varmeta-sm { width: 24px; height: 18px; left: 6px; top: 9px; transform: none; }
-  .varmeta-lg { display: none; }
   .marker-text {
     display: flex; flex-direction: column; align-items: start;
     white-space: nowrap; overflow: hidden;
@@ -333,19 +325,12 @@ const markers = LOCATIONS.map(loc =&gt; {
 const hubMarker = markers.find(m =&gt; m.loc.isHub).pt;
 
 // ---- HTML Markers -----------------------------------------------------------
-// SM = 16.072×12px logo (state-1/2/pin/edge); LG = 21.429×16px logo (state-3 expanded)
-const VARMETA_LOGO_SM = 'data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2038.8879%2029.0392%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M0%2020.7061L11.1108%209.5953C15.7136%204.99254%2023.1743%204.99254%2027.7771%209.5953L38.8879%2020.7061L30.5548%2029.0392L19.4439%2017.9284L8.33312%2029.0392L0%2020.7061Z%22%20fill%3D%22%231C1C1C%22%2F%3E%3Cpath%20d%3D%22M11.1602%203.50098C15.7356%20-1.07421%2023.1521%20-1.07415%2027.7275%203.50098L38.7891%2014.5625L30.5547%2022.7969L19.4443%2011.6865L19.3945%2011.7354L8.33301%2022.7969L0.0986328%2014.5625L11.1602%203.50098Z%22%20fill%3D%22%231078F3%22%20stroke%3D%22%231078F3%22%20stroke-width%3D%220.14%22%2F%3E%3Cpath%20d%3D%22M22.344%2026.0326L19.4368%2028.9399L16.5296%2026.0326L19.4368%2023.1254L22.344%2026.0326Z%22%20fill%3D%22%231078F3%22%20stroke%3D%22%231078F3%22%20stroke-width%3D%220.12%22%2F%3E%3C%2Fsvg%3E';
-const VARMETA_LOGO_LG = VARMETA_LOGO_SM;
 const tooltipContainer = document.getElementById('tooltip-container');
 const tooltips = LOCATIONS.map(loc =&gt; {
   const el = document.createElement('div');
   el.className = 'globe-marker state-1' + (loc.isHub ? ' varmeta' : '');
-  const dotIconHTML = loc.isHub
-    ? '<img class=\'varmeta-dot-logo\' src=\'' + VARMETA_LOGO_SM + '\' alt=\'\'>': '<div class=\'diamond-inner\'></div><div class=\'diamond-outer\'></div>';
-  const cardIconHTML = loc.isHub
-    ? '<img class=\'varmeta-logo varmeta-sm\' src=\'' + VARMETA_LOGO_SM + '\' alt=\'\'>'+
-      '<img class=\'varmeta-logo varmeta-lg\' src=\'' + VARMETA_LOGO_LG + '\' alt=\'\'>'
-    : '<div class=\'diamond-inner\'></div><div class=\'diamond-outer\'></div>';
+  const dotIconHTML = '<div class=\'diamond-inner\'></div><div class=\'diamond-outer\'></div>';
+  const cardIconHTML = '<div class=\'diamond-inner\'></div><div class=\'diamond-outer\'></div>';
   el.innerHTML = `<div class='marker-dot'>${dotIconHTML}</div><div class='marker-card'><div class='tt-corner tt-tl'></div><div class='tt-corner tt-tr'></div><div class='tt-corner tt-bl'></div><div class='tt-corner tt-br'></div><div class='marker-icon'>${cardIconHTML}</div><div class='marker-text'><div class='loc-name'>${loc.name}</div><div class='loc-time'><span class='time-val'></span><span class='loc-time-tz'></span></div></div></div>`;
   tooltipContainer.appendChild(el);
   const dotEl = el.querySelector('.marker-dot');
