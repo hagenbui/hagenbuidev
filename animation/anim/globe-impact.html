@@ -133,7 +133,7 @@
   .marker-icon .diamond-inner { position: absolute; background: #1078f3; transform: rotate(45deg); width: 14px; height: 14px; }
   .marker-icon .diamond-outer { position: absolute; border: 1px solid #1078f3; transform: rotate(45deg); width: 26px; height: 26px; }
   /* Varmeta logo inside card icon (state-2 sizing per Figma 3875) */
-  .varmeta-logo { display: block; position: absolute; }
+  .varmeta-logo { display: block; position: absolute; filter: brightness(0) invert(1); }
   .varmeta-sm { width: 24px; height: 18px; left: 6px; top: 9px; transform: none; }
   .varmeta-lg { display: none; }
   .marker-text {
@@ -334,8 +334,8 @@ const hubMarker = markers.find(m =&gt; m.loc.isHub).pt;
 
 // ---- HTML Markers -----------------------------------------------------------
 // SM = 16.072×12px logo (state-1/2/pin/edge); LG = 21.429×16px logo (state-3 expanded)
-const VARMETA_LOGO_SM = 'https://www.figma.com/api/mcp/asset/aaaad2ba-79f5-4b05-87c4-0b8781af28ba';
-const VARMETA_LOGO_LG = 'https://www.figma.com/api/mcp/asset/660515dc-0066-49b7-8094-7197a0cfeb7c';
+const VARMETA_LOGO_SM = 'data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2038.8879%2029.0392%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M0%2020.7061L11.1108%209.5953C15.7136%204.99254%2023.1743%204.99254%2027.7771%209.5953L38.8879%2020.7061L30.5548%2029.0392L19.4439%2017.9284L8.33312%2029.0392L0%2020.7061Z%22%20fill%3D%22%231C1C1C%22%2F%3E%3Cpath%20d%3D%22M11.1602%203.50098C15.7356%20-1.07421%2023.1521%20-1.07415%2027.7275%203.50098L38.7891%2014.5625L30.5547%2022.7969L19.4443%2011.6865L19.3945%2011.7354L8.33301%2022.7969L0.0986328%2014.5625L11.1602%203.50098Z%22%20fill%3D%22%231078F3%22%20stroke%3D%22%231078F3%22%20stroke-width%3D%220.14%22%2F%3E%3Cpath%20d%3D%22M22.344%2026.0326L19.4368%2028.9399L16.5296%2026.0326L19.4368%2023.1254L22.344%2026.0326Z%22%20fill%3D%22%231078F3%22%20stroke%3D%22%231078F3%22%20stroke-width%3D%220.12%22%2F%3E%3C%2Fsvg%3E';
+const VARMETA_LOGO_LG = VARMETA_LOGO_SM;
 const tooltipContainer = document.getElementById('tooltip-container');
 const tooltips = LOCATIONS.map(loc =&gt; {
   const el = document.createElement('div');
