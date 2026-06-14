@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>About — Isometric Cube Floor</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html {
+      width: 100%;
+      height: 100%;
+      background-color: rgba(255, 255, 255, 0.01); /* Workaround for Chromium iframe blending/transparency bug */
+    }
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      position: relative;
+    }
+    body::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; bottom: 0; width: 15%;
+      background: linear-gradient(to right, #fff 0%, rgba(255,255,255,0) 100%);
+      pointer-events: none;
+      z-index: 10;
+    }
+    body::after {
+      content: '';
+      position: absolute;
+      top: 0; right: 0; bottom: 0; width: 15%;
+      background: linear-gradient(to left, #fff 0%, rgba(255,255,255,0) 100%);
+      pointer-events: none;
+      z-index: 10;
+    }
+    canvas { display:block; width:100%; height:100%; background: transparent; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+// ── Logical coordinate space (about hero section) ───────────────────
+const VW = 946, VH = 600;
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const dpr    = Math.min(window.devicePixelRatio || 1, 1); // 1:1 backing store (perf)
+
+function resize() {
+  canvas.width  = canvas.clientWidth  * dpr;
+  canvas.height = canvas.clientHeight * dpr;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Isometric grid config ───────────────────────────────────────────
+const N    = 18;     // tiles per side
+const HW   = 25;     // half-width of a tile diamond (x)
+const HH   = 12.5;   // half-depth of a tile diamond (y)  → 2:1 iso
+const GAP  = 1.0;    // 1.0 = tiles touch with no gap
+const H_MAX   = 78;  // peak rise height (px) under the cursor
+const SPREAD  = 92;  // falloff radius of the bump (screen px) — tight feather
+const BASE_H  = 5;   // resting cube height so the floor grid stays visible
+const CX = VW / 2;
+const CY = VH / 2 + 20;
+
+// Grid origin so the centre tile sits at (CX, CY)
+const ORX = CX;
+const ORY = CY - (N - 1) * HH;
+
+// Base (floor-level) screen position of each tile centre
+function tileScreen(r, c){
+  return { x: ORX + (c - r) * HW, y: ORY + (c + r) * HH };
+}
+
+// Pre-compute tiles + back-to-front draw order (by r+c, then r)
+const tiles = [];
+for (let r = 0; r < N; r++) {
+  for (let c = 0; c < N; c++) {
+    const s = tileScreen(r, c);
+    tiles.push({ r, c, bx: s.x, by: s.y, h: 0, ph: Math.random() * Math.PI * 2 });
+  }
+}
+tiles.sort((a, b) => (a.r + a.c) - (b.r + b.c) || a.r - b.r);
+
+// ── Pointer (logical coords) + forwarded parent pointer ─────────────
+let mx = CX, my = CY, mInside = false;
+function setMouse(clientX, clientY){
+  const rect = canvas.getBoundingClientRect();
+  mx = (clientX - rect.left) / rect.width  * VW;
+  my = (clientY - rect.top)  / rect.height * VH;
+}
+window.addEventListener('pointermove', e => { setMouse(e.clientX, e.clientY); mInside = true; });
+window.addEventListener('pointerleave', () => { mInside = false; });
+window.addEventListener('message', e => {
+  const d = e.data;
+  if (d && d.type === 'parentpointer') { mx = (d.x / d.w) * VW; my = (d.y / d.h) * VH; mInside = true; }
+});
+
+// Eased cursor target (drifts to centre when pointer leaves)
+let tgx = CX, tgy = CY;
+
+// ── Draw one cube ───────────────────────────────────────────────────
+// White cubes — flat per-face tones, no strokes (fastest).
+const W = HW * GAP, D = HH * GAP;
+const TOP_FILL   = '#ffffff';   // lit top
+const LEFT_FILL  = '#e9edf2';   // SW face — soft grey
+const RIGHT_FILL = '#d2d9e2';   // SE face — darker grey
+
+function drawCube(bx, by, ph){
+  const topY = by - ph;                 // raised top-face centre
+
+  // right (SE) face
+  ctx.beginPath();
+  ctx.moveTo(bx, topY + D); ctx.lineTo(bx + W, topY);
+  ctx.lineTo(bx + W, by);   ctx.lineTo(bx, by + D); ctx.closePath();
+  ctx.fillStyle = RIGHT_FILL; ctx.fill();
+
+  // left (SW) face
+  ctx.beginPath();
+  ctx.moveTo(bx, topY + D); ctx.lineTo(bx - W, topY);
+  ctx.lineTo(bx - W, by);   ctx.lineTo(bx, by + D); ctx.closePath();
+  ctx.fillStyle = LEFT_FILL; ctx.fill();
+
+  // top face
+  ctx.beginPath();
+  ctx.moveTo(bx, topY - D); ctx.lineTo(bx + W, topY);
+  ctx.lineTo(bx, topY + D); ctx.lineTo(bx - W, topY); ctx.closePath();
+  ctx.fillStyle = TOP_FILL; ctx.fill();
+}
+
+// ── Loop ────────────────────────────────────────────────────────────
+let last = performance.now();
+function frame(now){
+  requestAnimationFrame(frame);
+
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+
+  // ease the bump target toward cursor (or screen centre when away)
+  const dstx = mInside ? mx : CX, dsty = mInside ? my : CY;
+  const ke = 1 - Math.pow(0.0015, dt);
+  tgx += (dstx - tgx) * ke;
+  tgy += (dsty - tgy) * ke;
+
+  // asymmetric height easing — rise fast, settle slow (DESIGN_DNA)
+  const kRise = 1 - Math.pow(0.003, dt);
+  const kFall = 1 - Math.pow(0.040, dt);
+
+  const inv2s2 = 1 / (2 * SPREAD * SPREAD);
+  for (const tl of tiles) {
+    const dx = tl.bx - tgx, dy = tl.by - tgy;
+    const tgt = BASE_H + H_MAX * Math.exp(-(dx*dx + dy*dy) * inv2s2);
+    tl.h += (tgt - tl.h) * (tgt > tl.h ? kRise : kFall);
+  }
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+  ctx.scale(canvas.clientWidth / VW, canvas.clientHeight / VH);
+
+  for (const tl of tiles) drawCube(tl.bx, tl.by, tl.h);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
