@@ -154,7 +154,7 @@ Words are split into `<span class="word">` by JS at load; each gets `animationDe
 
 ### Animation Design DNA
 
-Rules that apply to **all** `anim/` files — do not break these when editing:
+Rules that apply to **all** `homepage/` files — do not break these when editing:
 
 - **No threshold color jumps** — never use `if (value > threshold)` to switch between two colors. All node/edge color transitions must use continuous interpolation. The helper pattern is:
   ```js
