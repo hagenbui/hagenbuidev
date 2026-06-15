@@ -17,7 +17,7 @@
     /* Left edge: fade to white (blends with hero text area) */
     body::before {
       content: ''; position: absolute; pointer-events: none; z-index: 10;
-      top: 0; left: 0; bottom: 0; width: 28%;
+      top: 0; left: 0; bottom: 0; width: 18%;
       background: linear-gradient(to right, #fff 0%, rgba(255,255,255,0) 100%);
     }
     /* Right, top, bottom subtle fades */
@@ -55,27 +55,32 @@ resize();
 // ── Cubic bezier strings ─────────────────────────────────────────────
 // Each string: { pts:[x0,y0,cx1,cy1,cx2,cy2,x1,y1], w:lineWidth, base:baseAlpha }
 // Origins fan from top-right; converge toward bottom-center (≈ center of full hero section)
+// All strings fan from a tight top-right origin cluster.
+// First 10: wide arcs that sweep through the center of the panel.
+// Last 10: gentler arcs that fill the right portion.
 const STRINGS = [
-  // Right-edge origins (top → bottom)
-  { pts: [946,   8,  796, 130,  454, 512,  190, 600], w: 2.00, base: 0.26 },
-  { pts: [946,  70,  804, 172,  460, 517,  198, 600], w: 1.90, base: 0.24 },
-  { pts: [946, 135,  812, 228,  466, 521,  206, 600], w: 1.80, base: 0.23 },
-  { pts: [946, 200,  819, 278,  472, 526,  214, 600], w: 1.70, base: 0.22 },
-  { pts: [946, 268,  824, 328,  478, 530,  221, 600], w: 1.60, base: 0.20 },
-  { pts: [946, 338,  829, 370,  484, 534,  228, 600], w: 1.50, base: 0.19 },
-  { pts: [946, 410,  832, 414,  490, 538,  235, 600], w: 1.40, base: 0.18 },
-  { pts: [946, 482,  836, 452,  495, 542,  242, 600], w: 1.30, base: 0.17 },
-  { pts: [946, 545,  839, 490,  500, 546,  249, 600], w: 1.20, base: 0.15 },
-  { pts: [946, 592,  841, 524,  504, 550,  255, 600], w: 1.10, base: 0.14 },
-  // Top-edge origins (right → left)
-  { pts: [875,   0,  816,  60,  470, 486,  180, 600], w: 1.90, base: 0.24 },
-  { pts: [800,   0,  758,  76,  460, 476,  172, 600], w: 1.80, base: 0.22 },
-  { pts: [720,   0,  698,  90,  448, 464,  163, 600], w: 1.70, base: 0.21 },
-  { pts: [638,   0,  688,  98,  438, 452,  155, 600], w: 1.60, base: 0.19 },
-  { pts: [558,   0,  648, 108,  426, 440,  147, 600], w: 1.50, base: 0.18 },
-  { pts: [475,   0,  606, 118,  416, 428,  140, 600], w: 1.40, base: 0.17 },
-  { pts: [398,   0,  560, 128,  406, 416,  133, 600], w: 1.25, base: 0.15 },
-  { pts: [328,   0,  518, 138,  396, 406,  127, 600], w: 1.10, base: 0.13 },
+  // Wide sweeps — cross the center, land spread across bottom-left
+  { pts: [946,  4,  660,  55,  255, 488,   22, 600], w: 2.10, base: 0.28 },
+  { pts: [946,  7,  685,  65,  278, 496,   54, 600], w: 2.00, base: 0.27 },
+  { pts: [946, 11,  708,  78,  300, 503,   88, 600], w: 1.90, base: 0.26 },
+  { pts: [946, 16,  728,  92,  320, 508,  122, 600], w: 1.80, base: 0.25 },
+  { pts: [946, 22,  746, 108,  340, 513,  155, 600], w: 1.70, base: 0.24 },
+  { pts: [946, 29,  762, 126,  358, 518,  186, 600], w: 1.65, base: 0.23 },
+  { pts: [946, 37,  774, 144,  374, 522,  215, 600], w: 1.60, base: 0.22 },
+  { pts: [946, 46,  785, 164,  390, 526,  241, 600], w: 1.55, base: 0.22 },
+  { pts: [946, 56,  794, 185,  404, 529,  265, 600], w: 1.50, base: 0.21 },
+  { pts: [946, 67,  801, 207,  417, 532,  287, 600], w: 1.45, base: 0.21 },
+  // Gentle arcs — fill the right side, land bottom-center
+  { pts: [946,  80,  808, 230,  429, 535,  307, 600], w: 1.40, base: 0.20 },
+  { pts: [946,  96,  813, 255,  440, 537,  325, 600], w: 1.35, base: 0.19 },
+  { pts: [946, 115,  818, 280,  449, 539,  341, 600], w: 1.30, base: 0.19 },
+  { pts: [946, 140,  822, 306,  458, 541,  355, 600], w: 1.25, base: 0.18 },
+  { pts: [946, 170,  826, 332,  466, 542,  368, 600], w: 1.20, base: 0.18 },
+  { pts: [946, 206,  829, 358,  473, 544,  380, 600], w: 1.15, base: 0.17 },
+  { pts: [946, 250,  832, 382,  479, 545,  391, 600], w: 1.10, base: 0.17 },
+  { pts: [946, 302,  835, 406,  485, 547,  401, 600], w: 1.05, base: 0.16 },
+  { pts: [946, 362,  837, 428,  490, 548,  411, 600], w: 1.00, base: 0.15 },
+  { pts: [946, 432,  840, 450,  496, 550,  420, 600], w: 0.95, base: 0.15 },
 ];
 
 // ── Arc-length LUT (even-speed surge travel) ─────────────────────────
