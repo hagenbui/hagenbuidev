@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>About — Hero Strings</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html {
+      width: 100%; height: 100%;
+      background-color: rgba(255,255,255,0.01); /* Chromium iframe transparency workaround */
+    }
+    body {
+      width: 100%; height: 100%;
+      overflow: hidden; background: transparent; position: relative;
+    }
+    canvas { display: block; width: 100%; height: 100%; background: transparent; }
+    /* Left edge: fade to white (blends with hero text area) */
+    body::before {
+      content: ''; position: absolute; pointer-events: none; z-index: 10;
+      top: 0; left: 0; bottom: 0; width: 28%;
+      background: linear-gradient(to right, #fff 0%, rgba(255,255,255,0) 100%);
+    }
+    /* Right, top, bottom subtle fades */
+    body::after {
+      content: ''; position: absolute; pointer-events: none; z-index: 10;
+      inset: 0;
+      background:
+        linear-gradient(to bottom, rgba(255,255,255,0.75) 0%, transparent 14%, transparent 88%, rgba(255,255,255,0.55) 100%),
+        linear-gradient(to left,  rgba(255,255,255,0.45) 0%, transparent 10%);
+    }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const VW = 946, VH = 600;
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const dpr    = window.devicePixelRatio || 1;
+let sx = 1, sy = 1;
+
+function resize() {
+  canvas.width  = canvas.clientWidth  * dpr;
+  canvas.height = canvas.clientHeight * dpr;
+  sx = canvas.width  / VW;
+  sy = canvas.height / VH;
+  ctx.lineJoin = 'round';
+  ctx.lineCap  = 'round';
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Cubic bezier strings ─────────────────────────────────────────────
+// Each string: { pts:[x0,y0,cx1,cy1,cx2,cy2,x1,y1], w:lineWidth, base:baseAlpha }
+// Origins fan from top-right; converge toward bottom-center (≈ center of full hero section)
+const STRINGS = [
+  // Right-edge origins
+  { pts: [946,  22,  800, 170,  460, 520,  200, 600], w: 1.30, base: 0.130 },
+  { pts: [946, 120,  812, 240,  472, 526,  214, 600], w: 1.20, base: 0.120 },
+  { pts: [946, 235,  822, 305,  482, 532,  226, 600], w: 1.10, base: 0.110 },
+  { pts: [946, 365,  830, 374,  490, 538,  237, 600], w: 1.00, base: 0.100 },
+  { pts: [946, 488,  836, 454,  498, 544,  248, 600], w: 0.90, base: 0.090 },
+  // Top-edge origins
+  { pts: [800,   0,  752,  88,  468, 500,  188, 600], w: 1.20, base: 0.115 },
+  { pts: [638,   0,  682, 104,  448, 476,  170, 600], w: 1.10, base: 0.108 },
+  { pts: [478,   0,  600, 120,  428, 452,  154, 600], w: 1.00, base: 0.098 },
+  { pts: [328,   0,  518, 136,  408, 430,  140, 600], w: 0.85, base: 0.085 },
+];
+
+// ── Arc-length LUT (even-speed surge travel) ─────────────────────────
+const LUT_N = 100;
+
+function buildLut(pts) {
+  const table = [0];
+  let px = pts[0], py = pts[1], total = 0;
+  for (let i = 1; i <= LUT_N; i++) {
+    const t = i / LUT_N, mt = 1 - t;
+    const x = mt**3*pts[0] + 3*mt**2*t*pts[2] + 3*mt*t**2*pts[4] + t**3*pts[6];
+    const y = mt**3*pts[1] + 3*mt**2*t*pts[3] + 3*mt*t**2*pts[5] + t**3*pts[7];
+    total += Math.hypot(x - px, y - py);
+    table.push(total);
+    px = x; py = y;
+  }
+  return { table, total };
+}
+const luts = STRINGS.map(s => buildLut(s.pts));
+
+function tAtDist(lut, d) {
+  const target = Math.max(0, Math.min(d, lut.total));
+  let lo = 0, hi = LUT_N;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    lut.table[mid] <= target ? lo = mid : hi = mid;
+  }
+  return (lo + (target - lut.table[lo]) / ((lut.table[hi] - lut.table[lo]) || 1)) / LUT_N;
+}
+
+function bPt(pts, t) {
+  const mt = 1 - t;
+  return {
+    x: mt**3*pts[0] + 3*mt**2*t*pts[2] + 3*mt*t**2*pts[4] + t**3*pts[6],
+    y: mt**3*pts[1] + 3*mt**2*t*pts[3] + 3*mt*t**2*pts[5] + t**3*pts[7],
+  };
+}
+
+// ── Draw a string's base (faint static line) ─────────────────────────
+function drawBase(s, lut) {
+  const pts = s.pts;
+  ctx.beginPath();
+  ctx.moveTo(pts[0] * sx, pts[1] * sy);
+  for (let i = 1; i <= 80; i++) {
+    const p = bPt(pts, i / 80);
+    ctx.lineTo(p.x * sx, p.y * sy);
+  }
+  ctx.strokeStyle = `rgba(16,120,243,${s.base})`;
+  ctx.lineWidth   = s.w;
+  ctx.stroke();
+}
+
+// ── Draw a traveling surge along a string ───────────────────────────
+const SURGE_WIN = 0.22;  // gradient half-window as fraction of arc length
+
+function drawSurge(s, lut, d) {
+  const total = lut.total;
+  const frac  = d / total;
+
+  let edgeFade = 1;
+  if (frac < 0.05) edgeFade = frac / 0.05;
+  else if (frac > 0.90) edgeFade = Math.max(0, (1 - frac) / 0.10);
+  if (edgeFade <= 0) return;
+
+  const winHalf = total * SURGE_WIN;
+  const dS = Math.max(0, d - winHalf * 0.75);
+  const dE = Math.min(total, d + winHalf * 0.38);
+
+  const tS = tAtDist(lut, dS);
+  const tE = tAtDist(lut, dE);
+  const tP = tAtDist(lut, Math.min(total, d));
+
+  const pS = bPt(s.pts, tS);
+  const pE = bPt(s.pts, tE);
+  const peakStop = Math.max(0.01, Math.min(0.99, (tP - tS) / Math.max(0.001, tE - tS)));
+
+  const steps  = 50;
+  const tRange = tE - tS;
+
+  // Build the curved path segment
+  const buildPath = () => {
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const p = bPt(s.pts, tS + (i / steps) * tRange);
+      i === 0 ? ctx.moveTo(p.x*sx, p.y*sy) : ctx.lineTo(p.x*sx, p.y*sy);
+    }
+  };
+
+  // Outer glow pass
+  const gOuter = ctx.createLinearGradient(pS.x*sx, pS.y*sy, pE.x*sx, pE.y*sy);
+  gOuter.addColorStop(0,         'rgba(16,120,243,0)');
+  gOuter.addColorStop(peakStop,  `rgba(16,120,243,${(0.82 * edgeFade).toFixed(3)})`);
+  gOuter.addColorStop(1,         'rgba(16,120,243,0)');
+  buildPath();
+  ctx.strokeStyle = gOuter;
+  ctx.lineWidth   = 4.5;
+  ctx.stroke();
+
+  // Bright core pass
+  const gCore = ctx.createLinearGradient(pS.x*sx, pS.y*sy, pE.x*sx, pE.y*sy);
+  gCore.addColorStop(0,         'rgba(200,235,255,0)');
+  gCore.addColorStop(peakStop,  `rgba(235,248,255,${(0.92 * edgeFade).toFixed(3)})`);
+  gCore.addColorStop(1,         'rgba(200,235,255,0)');
+  buildPath();
+  ctx.strokeStyle = gCore;
+  ctx.lineWidth   = 1.2;
+  ctx.stroke();
+}
+
+// ── Surges ───────────────────────────────────────────────────────────
+const SURGE_SPEED = 175;  // logical px/s
+
+const surges = [];
+STRINGS.forEach((_, i) => {
+  const total = luts[i].total;
+  const count = Math.random() > 0.4 ? 2 : 1;
+  for (let k = 0; k < count; k++) {
+    surges.push({
+      li:    i,
+      d:     Math.random() * total,
+      speed: SURGE_SPEED * (0.80 + Math.random() * 0.40),
+    });
+  }
+});
+
+// ── Render loop ───────────────────────────────────────────────────────
+let last = 0;
+function frame(ts) {
+  if (!last) last = ts;
+  const dt = Math.min((ts - last) / 1000, 0.05);
+  last = ts;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  STRINGS.forEach((s, i) => drawBase(s, luts[i]));
+
+  surges.forEach(sg => {
+    const lut  = luts[sg.li];
+    const winHalf = lut.total * SURGE_WIN * 0.75;
+    sg.d += sg.speed * dt;
+    if (sg.d > lut.total + winHalf) {
+      sg.d = -winHalf;
+      sg.speed = SURGE_SPEED * (0.80 + Math.random() * 0.40);
+    }
+    if (sg.d > 0) drawSurge(STRINGS[sg.li], lut, sg.d);
+  });
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
