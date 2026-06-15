@@ -413,7 +413,8 @@ function animate(ts) {
     });
     if (surgeClose) tgt = 1;
     n.hover += (tgt - n.hover) * (tgt > n.hover ? kRise : kFall);
-    n.checkLerp += (n.checked ? 1 : 0 - n.checkLerp) * kCheck;
+    const clTgt = n.checked ? 1 : 0;
+    n.checkLerp += (clTgt - n.checkLerp) * kCheck;
   });
 
   if (canvas.width !== canvas.clientWidth * dpr || canvas.height !== canvas.clientHeight * dpr) resize();
