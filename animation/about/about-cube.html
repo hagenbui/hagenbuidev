@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>About — Scatter Cube</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html {
+      width:100%; height:100%;
+      background-color: rgba(255,255,255,0.01);
+    }
+    body { width:100%; height:100%; overflow:hidden; background:transparent; }
+    canvas { display:block; width:100%; height:100%; }
+  </style>
+</head>
+<body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+// ── Params ────────────────────────────────────────────────────────────
+const N              = 7;     // NxNxN sub-cubes  (7³ = 343)
+const CUBE_SIZE      = 0.86;  // visual size of each sub-cube
+const GAP            = 1.00;  // grid step (1 = cubes touch)
+const SCATTER_RADIUS = 2.40;  // world-unit proximity radius for scatter
+const SCATTER_FORCE  = 0.18;  // impulse per frame when inside radius
+const SPRING_K       = 0.055; // spring pull back to home
+const DAMPING        = 0.78;  // velocity damping per frame
+const FRUSTUM        = 6.2;   // orthographic half-height (world units)
+
+// ── Renderer ──────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x000000, 0);
+document.body.appendChild(renderer.domElement);
+
+// ── Scene ─────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+
+// ── Isometric camera (camera sits along the (1,1,1) diagonal) ────────
+const aspect = innerWidth / innerHeight;
+const camera = new THREE.OrthographicCamera(
+  -FRUSTUM * aspect, FRUSTUM * aspect, FRUSTUM, -FRUSTUM, 0.1, 200
+);
+camera.position.set(14, 14, 14);
+camera.lookAt(0, 0, 0);
+
+// ── Lighting ──────────────────────────────────────────────────────────
+// Three lights give the classic iso three-face shading (top/left/right)
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+
+const keyLight = new THREE.DirectionalLight(0xffffff, 0.85);
+keyLight.position.set(2, 4, 1);   // above-left → top face brightest
+scene.add(keyLight);
+
+const fillLight = new THREE.DirectionalLight(0xbce5ff, 0.35); // blue fill
+fillLight.position.set(-2, 1, 3); // right-front → blue tint on right face
+scene.add(fillLight);
+
+// ── Instanced cube mesh ───────────────────────────────────────────────
+const geo  = new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE);
+const mat  = new THREE.MeshPhongMaterial({
+  color:     0xfafcff,
+  specular:  0x8ed5ff,
+  shininess: 28,
+});
+const TOTAL = N * N * N;
+const mesh  = new THREE.InstancedMesh(geo, mat, TOTAL);
+mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(mesh);
+
+// Per-instance physics state
+const home = new Array(TOTAL);
+const pos  = new Array(TOTAL);
+const vel  = new Array(TOTAL);
+const dummy = new THREE.Object3D();
+
+const offset = ((N - 1) * GAP) / 2;
+let idx = 0;
+for (let ix = 0; ix < N; ix++) {
+  for (let iy = 0; iy < N; iy++) {
+    for (let iz = 0; iz < N; iz++) {
+      const h = new THREE.Vector3(
+        ix * GAP - offset,
+        iy * GAP - offset,
+        iz * GAP - offset
+      );
+      home[idx] = h;
+      pos[idx]  = h.clone();
+      vel[idx]  = new THREE.Vector3();
+      dummy.position.copy(h);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(idx, dummy.matrix);
+      idx++;
+    }
+  }
+}
+mesh.instanceMatrix.needsUpdate = true;
+
+// ── Invisible hit-proxy (big box) for raycasting ─────────────────────
+const hitMesh = new THREE.Mesh(
+  new THREE.BoxGeometry(N * GAP + 1.5, N * GAP + 1.5, N * GAP + 1.5),
+  new THREE.MeshBasicMaterial({ visible: false, side: THREE.FrontSide })
+);
+scene.add(hitMesh);
+
+// ── Mouse tracking ────────────────────────────────────────────────────
+const mouse     = new THREE.Vector2(-9999, -9999);
+const raycaster = new THREE.Raycaster();
+let   hoverPt   = null;
+
+renderer.domElement.addEventListener('mousemove', e => {
+  mouse.x =  (e.clientX / innerWidth)  * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+});
+renderer.domElement.addEventListener('mouseleave', () => { hoverPt = null; mouse.set(-9999,-9999); });
+
+// ── Resize ────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  const a = innerWidth / innerHeight;
+  camera.left   = -FRUSTUM * a;
+  camera.right  =  FRUSTUM * a;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ── Render loop ───────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+
+  // Raycast against proxy box
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObject(hitMesh);
+  hoverPt = hits.length ? hits[0].point : null;
+
+  // Integrate physics for each sub-cube
+  const _dir = new THREE.Vector3();
+  for (let i = 0; i < TOTAL; i++) {
+    const p = pos[i];
+    const h = home[i];
+    const v = vel[i];
+
+    // Scatter impulse when inside hover radius
+    if (hoverPt) {
+      const d = p.distanceTo(hoverPt);
+      if (d < SCATTER_RADIUS) {
+        const strength = (1 - d / SCATTER_RADIUS) * SCATTER_FORCE;
+        _dir.subVectors(p, hoverPt).normalize();
+        v.addScaledVector(_dir, strength);
+      }
+    }
+
+    // Spring back toward home position
+    v.x += (h.x - p.x) * SPRING_K;
+    v.y += (h.y - p.y) * SPRING_K;
+    v.z += (h.z - p.z) * SPRING_K;
+
+    v.multiplyScalar(DAMPING);
+    p.add(v);
+
+    dummy.position.copy(p);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
+  }
+
+  mesh.instanceMatrix.needsUpdate = true;
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
