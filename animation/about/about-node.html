@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>About — Node Network</title>
+  <style>
+    * { box-sizing:border-box; margin:0; padding:0; user-select:none; }
+    html { width:100%; height:100%; background:#fff; }
+    body { width:100%; height:100%; overflow:hidden; background:transparent; position:relative; }
+    /* Top / bottom edge fades */
+    body::before {
+      content:''; position:absolute; pointer-events:none; z-index:10;
+      top:0; left:0; right:0; height:15%;
+      background:linear-gradient(to bottom, #fff 0%, rgba(255,255,255,0) 100%);
+    }
+    body::after {
+      content:''; position:absolute; pointer-events:none; z-index:10;
+      bottom:0; left:0; right:0; height:15%;
+      background:linear-gradient(to top, #fff 0%, rgba(255,255,255,0) 100%);
+    }
+    canvas { display:block; width:100%; height:100%; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+// ── DESIGN DNA ────────────────────────────────────────────────────────
+function lerpRGBA(r0,g0,b0,a0, r1,g1,b1,a1, t) {
+  return `rgba(${(r0+(r1-r0)*t+.5)|0},${(g0+(g1-g0)*t+.5)|0},${(b0+(b1-b0)*t+.5)|0},${(a0+(a1-a0)*t).toFixed(2)})`;
+}
+
+// ── Canvas ────────────────────────────────────────────────────────────
+const VW = 400, VH = 600;
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const dpr    = window.devicePixelRatio || 1;
+let sx = 1, sy = 1;
+
+function resize() {
+  canvas.width  = canvas.clientWidth  * dpr;
+  canvas.height = canvas.clientHeight * dpr;
+  sx = canvas.width  / VW;
+  sy = canvas.height / VH;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Layout ────────────────────────────────────────────────────────────
+// Vertical diamond: rx = x (fixed), ry = y (scrolls).
+// Same topology as blockchain but rotated 90° — edges flow top-to-bottom.
+const PAT = [
+  { id: 0, rx: 200, ry:   0 },  // top   (cross-tile from tile below)
+  { id: 1, rx:  96, ry: 110 },
+  { id: 2, rx: 304, ry: 110 },
+  { id: 3, rx: 200, ry: 215 },  // upper centre
+  { id: 4, rx:  96, ry: 355 },
+  { id: 5, rx: 304, ry: 355 },
+  { id: 6, rx: 200, ry: 460 },  // lower centre
+  { id: 7, rx: 200, ry: 600 },  // bottom (cross-tile to tile above)
+];
+
+const TH = 720;   // tile height — larger than VH so the loop stays seamless
+const NT = 3;     // tile count
+const SCROLL_PPS = 80;   // px/s scroll speed (vertical)
+
+let nodes = [];
+for (let t = 0; t < NT; t++) {
+  PAT.forEach(p => nodes.push({
+    tile: t, id: p.id,
+    cx: p.rx,
+    cy: p.ry + t * TH,
+    checked: false, checkLerp: 0,
+    hover: 0,
+  }));
+}
+
+const edgeDefs = [
+  { from: 0, to: 1 },
+  { from: 0, to: 2 },
+  { from: 1, to: 3 },
+  { from: 2, to: 3 },
+  { from: 3, to: 4 },
+  { from: 3, to: 5 },
+  { from: 4, to: 6 },
+  { from: 5, to: 6 },
+  { from: 6, to: 7 },
+  { from: 7, to: 0, isCrossTile: true },
+];
+
+let edges = [];
+for (let t = 0; t < NT; t++) {
+  const nextT = (t + 1) % NT;
+  edgeDefs.forEach(d => edges.push({
+    from: [t, d.from],
+    to:   [d.isCrossTile ? nextT : t, d.to],
+    isCrossTile: !!d.isCrossTile,
+    fromNode: null, toNode: null,
+    arcLen: 0,
+    surge: { active: false, progressPx: 0, speed: 0 },
+  }));
+}
+
+// ── Bezier helpers (vertical S-curves) ───────────────────────────────
+// Control points keep the same X as their endpoint; offset shifts in Y.
+function getBezierCoords(e) {
+  const a = e.fromNode, b = e.toNode;
+  let by = b.cy;
+  if (by < a.cy) by += NT * TH;          // cross-tile: destination must be below
+  const dy = by - a.cy;
+  return {
+    x1: a.cx,  y1: a.cy,
+    cx1: a.cx, cy1: a.cy + dy * 0.45,
+    cx2: b.cx, cy2: by   - dy * 0.45,
+    x2: b.cx,  y2: by,
+    isStraight: Math.abs(a.cx - b.cx) < 2,
+  };
+}
+
+function computeArcLen(e) {
+  const { x1, y1, cx1, cy1, cx2, cy2, x2, y2, isStraight } = getBezierCoords(e);
+  if (isStraight) return Math.abs(y2 - y1);
+  let len = 0, px = x1, py = y1;
+  for (let i = 1; i <= 60; i++) {
+    const t = i / 60, mt = 1 - t;
+    const x = mt**3*x1 + 3*mt**2*t*cx1 + 3*mt*t**2*cx2 + t**3*x2;
+    const y = mt**3*y1 + 3*mt**2*t*cy1 + 3*mt*t**2*cy2 + t**3*y2;
+    len += Math.hypot(x - px, y - py);
+    px = x; py = y;
+  }
+  return len;
+}
+
+// ── Link edges ────────────────────────────────────────────────────────
+edges.forEach((e, idx) => {
+  e.fromNode = nodes.find(n => n.tile === e.from[0] && n.id === e.from[1]);
+  e.toNode   = nodes.find(n => n.tile === e.to[0]   && n.id === e.to[1]);
+  e.arcLen   = computeArcLen(e);
+  e.surge.speed = SCROLL_PPS + 460 + (Math.sin(idx * 1.7) + 1) * 12;
+});
+
+// ── Initial state ─────────────────────────────────────────────────────
+nodes.forEach(n => {
+  if (n.cy <= VH / 2) { n.checked = true; n.checkLerp = 1; }
+});
+edges.forEach(e => {
+  let by = e.toNode.cy;
+  if (by < e.fromNode.cy) by += NT * TH;
+  if (e.fromNode.cy <= VH / 2 && by > VH / 2) {
+    e.surge.active = true;
+    e.surge.progressPx = ((VH / 2 - e.fromNode.cy) / (by - e.fromNode.cy)) * e.arcLen;
+  }
+});
+
+// ── Mouse ─────────────────────────────────────────────────────────────
+let mx = -9999, my = -9999;
+function updateMouse(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  mx = (clientX - r.left) / r.width  * VW;
+  my = (clientY - r.top)  / r.height * VH;
+}
+canvas.addEventListener('mousemove',    e => updateMouse(e.clientX, e.clientY));
+canvas.addEventListener('pointermove',  e => updateMouse(e.clientX, e.clientY));
+canvas.addEventListener('mouseleave',   () => { mx = -9999; my = -9999; });
+canvas.addEventListener('pointerleave', () => { mx = -9999; my = -9999; });
+
+// ── Dot grid (pre-computed over full tiled height) ────────────────────
+const gridPositions = [];
+{
+  const spacing = 36;
+  for (let x = spacing / 2; x < VW; x += spacing) {
+    for (let y = spacing / 2; y < NT * TH; y += spacing) {
+      gridPositions.push({ x, y });
+    }
+  }
+}
+
+// ── Node geometry ─────────────────────────────────────────────────────
+const SZ = 44, H = SZ / 2;
+const IR = 11, ID = 5;
+
+// ── Draw ──────────────────────────────────────────────────────────────
+function drawGrid(off) {
+  const scx = VW / 2, scy = VH / 2;
+  const maxDist = 500;
+  const myWorld = my + off;
+
+  gridPositions.forEach(c => {
+    const screenY = c.y - off;
+    if (screenY < -40 || screenY > VH + 40) return;
+
+    const sdx = c.x - scx, sdy = screenY - scy;
+    const f = Math.max(0, 1 - Math.sqrt(sdx * sdx + sdy * sdy) / maxDist);
+    if (f < 0.01) return;
+
+    let r = 2.25 * (VW / 900) * f;
+    let opacity = f * 0.9;
+
+    const dx = c.x - mx, dy = c.y - myWorld;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 130) {
+      const u = 1 - dist / 130;
+      r       *= (1 + 1.8 * u);
+      opacity  = Math.min(1.0, opacity * (1 + 0.5 * u));
+    }
+
+    ctx.fillStyle = `rgba(142,213,255,${opacity.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(
+      Math.round(c.x * sx),
+      Math.round(screenY * sy),
+      Math.round(r * Math.min(sx, sy) * 2) / 2,
+      0, Math.PI * 2
+    );
+    ctx.fill();
+  });
+}
+
+function drawBaseEdge(e, off) {
+  const { x1, y1, cx1, cy1, cx2, cy2, x2, y2, isStraight } = getBezierCoords(e);
+  const oy = -off;
+  if ((y1 + oy < -H && y2 + oy < -H) || (y1 + oy > VH + H && y2 + oy > VH + H)) return;
+
+  const bx1 = x1*sx,  by1 = (y1+oy)*sy;
+  const bcx1= cx1*sx, bcy1= (cy1+oy)*sy;
+  const bcx2= cx2*sx, bcy2= (cy2+oy)*sy;
+  const bx2 = x2*sx,  by2 = (y2+oy)*sy;
+
+  const grad = ctx.createLinearGradient(bx1, by1, bx2, by2);
+  grad.addColorStop(0,    'rgba(142,213,255,0)');
+  grad.addColorStop(0.08, 'rgba(142,213,255,0.35)');
+  grad.addColorStop(0.92, 'rgba(142,213,255,0.35)');
+  grad.addColorStop(1,    'rgba(142,213,255,0)');
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(bx1, by1);
+  if (isStraight) ctx.lineTo(bx2, by2);
+  else            ctx.bezierCurveTo(bcx1, bcy1, bcx2, bcy2, bx2, by2);
+  ctx.strokeStyle = grad;
+  ctx.lineWidth   = 1.2 * Math.min(sx, sy);
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSurgeGlow(e, off) {
+  const t = e.surge.progressPx / e.arcLen;
+  if (t <= 0) return;
+
+  let edgeFade = 1;
+  if (t < 0.07) edgeFade = t / 0.07;
+  else if (t > 0.85) edgeFade = Math.max(0, (1 - t) / 0.15);
+
+  const opacity = 0.92 * edgeFade;
+  const tClamp  = Math.min(t, 1);
+  const start   = Math.max(0, tClamp - 0.20);
+  const end     = Math.min(1, tClamp + 0.20);
+
+  const { x1, y1, cx1, cy1, cx2, cy2, x2, y2, isStraight } = getBezierCoords(e);
+  const oy = -off;
+  if ((y1 + oy < -H && y2 + oy < -H) || (y1 + oy > VH + H && y2 + oy > VH + H)) return;
+
+  const bx1 = x1*sx,  by1 = (y1+oy)*sy;
+  const bcx1= cx1*sx, bcy1= (cy1+oy)*sy;
+  const bcx2= cx2*sx, bcy2= (cy2+oy)*sy;
+  const bx2 = x2*sx,  by2 = (y2+oy)*sy;
+
+  const grad = ctx.createLinearGradient(bx1, by1, bx2, by2);
+  grad.addColorStop(0, 'rgba(16,120,243,0)');
+  if (start > 0.001) grad.addColorStop(start, 'rgba(16,120,243,0)');
+  grad.addColorStop(tClamp, `rgba(16,120,243,${opacity.toFixed(3)})`);
+  if (end < 0.999)   grad.addColorStop(end,   'rgba(16,120,243,0)');
+  grad.addColorStop(1, 'rgba(16,120,243,0)');
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(bx1, by1);
+  if (isStraight) ctx.lineTo(bx2, by2);
+  else            ctx.bezierCurveTo(bcx1, bcy1, bcx2, bcy2, bx2, by2);
+  ctx.strokeStyle = grad;
+  ctx.lineWidth   = 3.2 * Math.min(sx, sy);
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawNode(n, off, hoverPulseOffset) {
+  const screenY = n.cy - off;
+  const x = n.cx * sx, y = screenY * sy;
+  const sc = Math.min(sx, sy);
+  const hv = n.hover, cl = n.checkLerp;
+
+  ctx.save();
+  ctx.translate(x, y);
+  if (hv > 0.001) ctx.scale(1 + 0.08 * hv, 1 + 0.08 * hv);
+
+  if (hv > 0.001) {
+    for (let i = 0; i < 2; i++) {
+      const raw = (hoverPulseOffset + i * 0.5) % 1;
+      const pr  = H * sc * (1.15 + raw * 2.0);
+      const pa  = (1 - raw) * 0.11 * hv;
+      ctx.beginPath();
+      ctx.arc(0, 0, pr, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(16,120,243,${pa.toFixed(3)})`;
+      ctx.lineWidth = 1.2 * sc;
+      ctx.stroke();
+    }
+  }
+
+  const hSc = H * sc, irSc = IR * sc, idSc = ID * sc;
+  const baseFill   = hv > 0.001 ? [238,248,255] : [255,255,255];
+  const outerFill  = lerpRGBA(baseFill[0],baseFill[1],baseFill[2],1, 16,120,243,1, cl);
+  const ringStroke = lerpRGBA(16,120,243,1, 255,255,255,1, cl);
+  const dotFill    = lerpRGBA(16,120,243,1, 255,255,255,1, cl);
+  const rot        = cl * Math.PI / 4;
+
+  ctx.beginPath();
+  ctx.roundRect(-hSc, -hSc, hSc*2, hSc*2, 5*sc);
+  ctx.fillStyle = outerFill;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(16,120,243,1)';
+  ctx.lineWidth   = 1.2 * sc;
+  ctx.stroke();
+
+  ctx.save();
+  ctx.rotate(rot);
+  ctx.beginPath();
+  ctx.roundRect(-irSc, -irSc, irSc*2, irSc*2, 2*sc);
+  ctx.strokeStyle = ringStroke;
+  ctx.lineWidth   = 1.0 * sc;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.roundRect(-idSc, -idSc, idSc*2, idSc*2, 1*sc);
+  ctx.fillStyle = dotFill;
+  ctx.fill();
+  ctx.restore();
+  ctx.restore();
+}
+
+// ── Loop ──────────────────────────────────────────────────────────────
+let hoverPulseOffset = 0, off = 0, lastTs = null;
+
+function animate(ts) {
+  if (!lastTs) lastTs = ts;
+  const dt = Math.min((ts - lastTs) / 1000, 0.05);
+  lastTs = ts;
+
+  // Scroll vertically
+  off += SCROLL_PPS * dt;
+
+  if (off >= TH) {
+    off -= TH;
+    nodes.forEach(n => { n.cy -= TH; });
+    nodes.forEach(n => {
+      if (n.cy < 0) {
+        n.cy       += NT * TH;
+        n.checked   = false;
+        n.checkLerp = 0;
+        edges.forEach(e => {
+          if (e.fromNode === n || e.toNode === n) {
+            e.surge.active = false; e.surge.progressPx = 0;
+          }
+        });
+      }
+    });
+    edges.forEach(e => { e.arcLen = computeArcLen(e); });
+  }
+
+  // Trigger surges when destination enters top half
+  edges.forEach(e => {
+    if (e.fromNode.checked && !e.toNode.checked && !e.surge.active) {
+      if (e.toNode.cy - off <= VH / 2) {
+        e.surge.active = true; e.surge.progressPx = 0;
+      }
+    }
+  });
+
+  // Advance surges
+  edges.forEach(e => {
+    if (e.surge.active) {
+      e.surge.progressPx += e.surge.speed * dt;
+      if (e.surge.progressPx > e.arcLen) e.surge.progressPx = e.arcLen;
+    }
+  });
+
+  // Consensus: check node when ALL incoming surges arrive
+  nodes.forEach(n => {
+    if (!n.checked) {
+      const incoming = edges.filter(e => e.toNode === n);
+      if (incoming.length && incoming.every(e => e.surge.active && e.surge.progressPx >= e.arcLen)) {
+        n.checked = true;
+        incoming.forEach(e => { e.surge.active = false; e.surge.progressPx = 0; });
+      }
+    }
+  });
+
+  // Hover & checkLerp
+  hoverPulseOffset = (hoverPulseOffset + dt * 0.32) % 1;
+  const kRise = 1 - Math.pow(0.003, dt);
+  const kFall = 1 - Math.pow(0.030, dt);
+  const kCheck = 1 - Math.pow(0.005, dt);
+
+  nodes.forEach(n => {
+    const dx = n.cx - mx, dy = (n.cy - off) - my;
+    let tgt = Math.hypot(dx, dy) < H * 1.6 ? 1 : 0;
+    const surgeClose = edges.some(e => {
+      if (!e.surge.active) return false;
+      if (e.fromNode === n) return e.surge.progressPx / e.arcLen < 0.20;
+      if (e.toNode   === n) return e.surge.progressPx / e.arcLen > 0.80;
+      return false;
+    });
+    if (surgeClose) tgt = 1;
+    n.hover += (tgt - n.hover) * (tgt > n.hover ? kRise : kFall);
+    n.checkLerp += (n.checked ? 1 : 0 - n.checkLerp) * kCheck;
+  });
+
+  if (canvas.width !== canvas.clientWidth * dpr || canvas.height !== canvas.clientHeight * dpr) resize();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  drawGrid(off);
+  edges.forEach(e => drawBaseEdge(e, off));
+  edges.forEach(e => { if (e.surge.active) drawSurgeGlow(e, off); });
+  nodes.forEach(n => {
+    const screenY = n.cy - off;
+    if (screenY < -(H + 10) || screenY > VH + H + 10) return;
+    drawNode(n, off, hoverPulseOffset);
+  });
+
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
