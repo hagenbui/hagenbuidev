@@ -30,138 +30,186 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// ── Focal point (bottom-center, just below frame) ─────────────────────
-const OX = VW / 2;
-const OY = VH + 48;
+// ── 3-D perspective ───────────────────────────────────────────────────
+// Focal origin sits just below the bottom-centre of the frame.
+// project() maps a 3-D world point (relative to origin) → logical screen coords.
+const FL       = 1400;           // perspective focal length (logical px)
+const FOCAL_SX = VW / 2;        // screen-x of focal origin
+const FOCAL_SY = VH + 42;       // screen-y of focal origin (below frame)
+
+function project(x, y, z) {
+  const w = FL / (FL + z);
+  return { lx: x * w + FOCAL_SX, ly: -y * w + FOCAL_SY };
+}
 
 // ── Seeded RNG for stable layout ──────────────────────────────────────
 let seed = 20250101;
 function rnd() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
 
-// ── Build lines ───────────────────────────────────────────────────────
-// angle convention: 0 = right, π/2 = up (screen up = -y), π = left
-// endpoint: ex = OX + cos(angle)*len,  ey = OY - sin(angle)*len
-const N          = 96;
-const ANGLE_MIN  = 0.13;                    // ≈7.5° from horizontal
-const ANGLE_MAX  = Math.PI - 0.13;
-
+// ── Build hemisphere lines (Fibonacci spiral — uniform solid angle) ───
+// dy > 0 always  →  every line points into the upper hemisphere.
+const N = 88;
 const lines = [];
 for (let i = 0; i < N; i++) {
-  const frac  = i / (N - 1);
-  const angle = ANGLE_MIN + frac * (ANGLE_MAX - ANGLE_MIN);
+  const cosT = 1 - (i + 0.5) / N;           // 1 = top pole, 0 = equator
+  const sinT = Math.sqrt(1 - cosT * cosT);
+  const phi  = i * 2.399963;                 // golden angle  →  even azimuthal spread
 
-  // Longer toward centre (sin peaks at π/2 = straight up)
-  const baseLen = 200 + Math.sin(angle) * 300;
-  const length  = baseLen * (0.45 + rnd() * 0.70);
+  const dx = sinT * Math.cos(phi);
+  const dy = cosT;
+  const dz = sinT * Math.sin(phi);
 
   lines.push({
-    angle,
-    length,
-    t:        -(rnd() * 4),          // staggered pre-delay (negative = waiting)
-    speed:    260 + rnd() * 140,     // logical px / s
-    dotGlow:  0,                     // 0–1 glow at tip
+    dx, dy, dz,
+    length:   200 + cosT * 310 + rnd() * 90,   // top lines are longest
+    t:        -(rnd() * 5.5),                   // staggered pre-delay
+    speed:    72 + rnd() * 52,                  // 72–124 logical px / s  (slow)
+    dotGlow:  0,
+    // filled each frame:
+    _rdx: 0, _rdy: 0, _rdz: 0,
   });
 }
 
-// ── Background radial gradient ────────────────────────────────────────
+// ── Rotation state (cursor drives smooth tilt) ────────────────────────
+let rotX =  0.10, rotY = 0.00;   // slight forward lean at rest
+let tgtX =  0.10, tgtY = 0.00;
+
+let mx = VW / 2, my = VH / 2;
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  mx = (e.clientX - r.left) / r.width  * VW;
+  my = (e.clientY - r.top)  / r.height * VH;
+});
+canvas.addEventListener('mouseleave', () => { mx = VW / 2; my = VH / 2; });
+
+// ── Rotate a direction vector (Y-axis, then X-axis) ───────────────────
+function rotVec(dx, dy, dz, rx, ry) {
+  // Y rotation
+  const nx  =  dx * Math.cos(ry) - dz * Math.sin(ry);
+  const nz  =  dx * Math.sin(ry) + dz * Math.cos(ry);
+  // X rotation
+  const ny  =  dy * Math.cos(rx) + nz * Math.sin(rx);
+  const nz2 = -dy * Math.sin(rx) + nz * Math.cos(rx);
+  return { rx: nx, ry: ny, rz: nz2 };
+}
+
+// ── Background gradient (emanates from focal point) ───────────────────
 function drawBg() {
-  const cx = (VW / 2) * sx;
-  const cy = VH * sy;
-  const r  = VH * 1.35 * Math.min(sx, sy);
-
-  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-  g.addColorStop(0.00, 'rgba(188, 221, 255, 0.60)');
-  g.addColorStop(0.30, 'rgba(210, 233, 255, 0.38)');
-  g.addColorStop(0.60, 'rgba(228, 242, 255, 0.18)');
-  g.addColorStop(1.00, 'rgba(255, 255, 255, 0.00)');
-
+  const cx = FOCAL_SX * sx, cy = FOCAL_SY * sy;
+  const r  = VH * 1.28 * Math.min(sx, sy);
+  const g  = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  g.addColorStop(0.00, 'rgba(188,221,255,0.68)');
+  g.addColorStop(0.32, 'rgba(210,233,255,0.38)');
+  g.addColorStop(0.62, 'rgba(228,242,255,0.17)');
+  g.addColorStop(1.00, 'rgba(255,255,255,0.00)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
-// ── Draw one line + comet + tip dot ──────────────────────────────────
-function drawLine(l) {
-  const ex = OX + Math.cos(l.angle) * l.length;
-  const ey = OY - Math.sin(l.angle) * l.length;
-
-  const ox = OX * sx, oy = OY * sy;
-  const x1 = ex  * sx, y1 = ey  * sy;
-
-  // Base line — faint
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(ox, oy);
-  ctx.lineTo(x1, y1);
-  ctx.strokeStyle = 'rgba(16,120,243,0.11)';
-  ctx.lineWidth   = 0.75;
-  ctx.stroke();
-  ctx.restore();
-
-  // Traveling comet spark
-  const t = l.t;
-  if (t > 0 && t < 1.20) {
-    const tHead = Math.min(1, t);
-    const tTail = Math.max(0, t - 0.32);
-
-    const hx = (OX + Math.cos(l.angle) * l.length * tHead) * sx;
-    const hy = (OY - Math.sin(l.angle) * l.length * tHead) * sy;
-    const tx = (OX + Math.cos(l.angle) * l.length * tTail) * sx;
-    const ty = (OY - Math.sin(l.angle) * l.length * tTail) * sy;
-
-    let ef = 1;
-    if (t < 0.10) ef = t / 0.10;
-
-    const g = ctx.createLinearGradient(tx, ty, hx, hy);
-    g.addColorStop(0,    'rgba(16,120,243,0)');
-    g.addColorStop(0.55, `rgba(16,120,243,${(0.30 * ef).toFixed(3)})`);
-    g.addColorStop(1,    `rgba(142,213,255,${(0.82 * ef).toFixed(3)})`);
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(tx, ty);
-    ctx.lineTo(hx, hy);
-    ctx.strokeStyle = g;
-    ctx.lineWidth   = 1.6;
-    ctx.lineCap     = 'round';
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // Tip dot — always dim, glows when spark arrives
-  const dg  = l.dotGlow;
-  const dot = Math.min(sx, sy);
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(x1, y1, (1.5 + dg * 2.8) * dot, 0, Math.PI * 2);
-  ctx.fillStyle = `rgba(16,120,243,${(0.18 + dg * 0.68).toFixed(3)})`;
-  ctx.fill();
-  ctx.restore();
-}
-
 // ── Render loop ───────────────────────────────────────────────────────
-const kRise = dt => 1 - Math.pow(0.002, dt);
-const kFall = dt => 1 - Math.pow(0.018, dt);
-
 let lastTs = 0;
+
 function frame(ts) {
   const dt = Math.min((ts - lastTs) / 1000, 0.05);
   lastTs = ts;
 
+  // Smooth rotation toward cursor target
+  tgtY =  ((mx / VW) - 0.5) *  0.52;
+  tgtX = -((my / VH) - 0.5) *  0.26 + 0.10;
+  const kRot = 1 - Math.pow(0.015, dt);
+  rotY += (tgtY - rotY) * kRot;
+  rotX += (tgtX - rotX) * kRot;
+
+  // Rotate all line directions
+  lines.forEach(l => {
+    const r = rotVec(l.dx, l.dy, l.dz, rotX, rotY);
+    l._rdx = r.rx; l._rdy = r.ry; l._rdz = r.rz;
+  });
+
+  // Painter's algorithm: draw back (high rdz) before front (low rdz)
+  lines.sort((a, b) => b._rdz - a._rdz);
+
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawBg();
 
-  lines.forEach(l => {
-    l.t += (l.speed / l.length) * dt;
+  const p0px = FOCAL_SX * sx;
+  const p0py = FOCAL_SY * sy;
 
-    if (l.t > 1.50) {
-      l.t     = -(0.3 + rnd() * 3.5);
-      l.speed = 260 + rnd() * 140;
+  // Easing constants for dot glow
+  const kRise = 1 - Math.pow(0.002, dt);
+  const kFall = 1 - Math.pow(0.018, dt);
+
+  lines.forEach(l => {
+    // Advance spark
+    l.t += (l.speed / l.length) * dt;
+    if (l.t > 1.55) {
+      l.t    = -(0.4 + rnd() * 4.8);
+      l.speed = 72 + rnd() * 52;
     }
 
-    const glowTgt = (l.t > 0.82 && l.t < 1.20) ? 1 : 0;
-    l.dotGlow += (glowTgt - l.dotGlow) * (glowTgt > l.dotGlow ? kRise(dt) : kFall(dt));
+    // Endpoint in 3-D (rotated space)
+    const ex = l._rdx * l.length;
+    const ey = l._rdy * l.length;
+    const ez = l._rdz * l.length;
+    const p1 = project(ex, ey, ez);
 
-    drawLine(l);
+    // Depth  0 = facing viewer,  1 = facing away
+    const depth      = (l._rdz + 1) * 0.5;
+    const baseAlpha  = 0.22 - depth * 0.16;   // 0.22 → 0.06
+    const baseWidth  = 0.90 - depth * 0.48;   // 0.90 → 0.42
+
+    // ── Base line ──────────────────────────────────────────────────
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(p0px, p0py);
+    ctx.lineTo(p1.lx * sx, p1.ly * sy);
+    ctx.strokeStyle = `rgba(16,120,243,${Math.max(0, baseAlpha).toFixed(3)})`;
+    ctx.lineWidth   = Math.max(0.25, baseWidth);
+    ctx.stroke();
+    ctx.restore();
+
+    // ── Traveling comet spark ──────────────────────────────────────
+    const t = l.t;
+    if (t > 0 && t < 1.24) {
+      const tHead = Math.min(1, t);
+      const tTail = Math.max(0, t - 0.30);
+
+      const hEp = project(l._rdx*l.length*tHead, l._rdy*l.length*tHead, l._rdz*l.length*tHead);
+      const tEp = project(l._rdx*l.length*tTail, l._rdy*l.length*tTail, l._rdz*l.length*tTail);
+
+      const ef = t < 0.10 ? t / 0.10 : 1;
+      const sa = (1 - depth * 0.55) * ef;
+
+      const g = ctx.createLinearGradient(tEp.lx*sx, tEp.ly*sy, hEp.lx*sx, hEp.ly*sy);
+      g.addColorStop(0,    'rgba(16,120,243,0)');
+      g.addColorStop(0.55, `rgba(16,120,243,${(0.30 * sa).toFixed(3)})`);
+      g.addColorStop(1,    `rgba(142,213,255,${(0.85 * sa).toFixed(3)})`);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(tEp.lx*sx, tEp.ly*sy);
+      ctx.lineTo(hEp.lx*sx, hEp.ly*sy);
+      ctx.strokeStyle = g;
+      ctx.lineWidth   = (1.65 - depth * 0.35) * Math.min(sx, sy);
+      ctx.lineCap     = 'round';
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // ── Tip dot with glow ──────────────────────────────────────────
+    const glowTgt = (l.t > 0.83 && l.t < 1.24) ? 1 : 0;
+    l.dotGlow += (glowTgt - l.dotGlow) * (glowTgt > l.dotGlow ? kRise : kFall);
+    const dg  = l.dotGlow;
+    const dotR = (1.25 + dg * 2.8) * (1 - depth * 0.38) * Math.min(sx, sy);
+
+    if (dotR > 0.2) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(p1.lx * sx, p1.ly * sy, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(16,120,243,${Math.min(1, baseAlpha + dg * 0.62).toFixed(3)})`;
+      ctx.fill();
+      ctx.restore();
+    }
   });
 
   requestAnimationFrame(frame);
