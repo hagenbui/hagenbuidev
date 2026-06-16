@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dual Expert — Chain × Mesh</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; background:transparent; overflow:hidden; }
+    canvas { display:block; width:100%; height:100%; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+// DESIGN DNA: travel #1078f3 (16,120,243)  secondary #8ed5ff (142,213,255)
+// Hover: ctx.scale(1+0.08*hv) + two expanding pulse rings α=(1-raw)*0.11*hv, 1.15+raw*2.0
+// Three-stop blend: u2=glow, u1=hover*(1-glow), u0=1-u1-u2
+// Idle fill=white, border=primary-blue@0.70. Rise τ≈200ms, fall τ≈600ms.
+//
+// Layout: chain nodes cluster organically left-of-bridge.
+//         Mesh is triangulated — nodes at triangle vertices, hub-and-spoke radiating right.
+//         Top-right and right edges have partial-bleed nodes.
+//
+// ── Universal node sizes ────────────────────────────────────────────────
+// BASE_SZ   = 28  chain squares
+// BRIDGE_SZ = 36  junction circle
+// NEURAL_SZ = 12  mesh circles (smallest legible, 43% of base)
+
+const BASE_SZ   = 28;
+const BRIDGE_SZ = 36;
+const NEURAL_SZ = 12;
+
+// ── Canvas ──────────────────────────────────────────────────────────────
+const VW = 640, VH = 428;
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const dpr    = window.devicePixelRatio || 1;
+let sx = 1, sy = 1;
+
+function resize() {
+  canvas.width  = canvas.clientWidth  * dpr;
+  canvas.height = canvas.clientHeight * dpr;
+  sx = canvas.width  / VW;
+  sy = canvas.height / VH;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Mouse ───────────────────────────────────────────────────────────────
+let mx = -9999, my = -9999;
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  mx = (e.clientX - r.left) / r.width  * VW;
+  my = (e.clientY - r.top)  / r.height * VH;
+});
+canvas.addEventListener('mouseleave', () => { mx = -9999; my = -9999; });
+
+// ── Node layout ──────────────────────────────────────────────────────────
+//
+// CHAIN — 4 squares clustered left-of-bridge, connected in sequence.
+//   C0 bleeds off left. C1 upper, C2 mid, C3 lower, all within 48px padding.
+//   Chain min y=76 (48+28), max y=352 (428-48-28).
+//
+// BRIDGE — circle junction, center-left of canvas.
+//
+// MESH — 8 circle nodes in a triangulated web.
+//   M3 is the hub (most edges). M2 and M7 bleed off right; M2 also near top.
+//   Neural min y=60 (48+12), max y=368 (428-48-12).
+
+const CHAIN = [
+  { x: -48, y: 202, sz: BASE_SZ,   glow: 0, hover: 0 },  // C0 left-bleed
+  { x: 108, y: 148, sz: BASE_SZ,   glow: 0, hover: 0 },  // C1 upper   (top=120 ✓)
+  { x: 165, y: 295, sz: BASE_SZ,   glow: 0, hover: 0 },  // C2 mid     (bot=323 ✓)
+  { x: 262, y: 318, sz: BASE_SZ,   glow: 0, hover: 0 },  // C3 lower   (bot=346 ✓)
+];
+const BRIDGE = { x: 342, y: 248, sz: BRIDGE_SZ, glow: 0, hover: 0 };
+const MESH = [
+  { x: 448, y: 145, sz: NEURAL_SZ, glow: 0, hover: 0, fired: false },  // M0 upper-left
+  { x: 556, y:  88, sz: NEURAL_SZ, glow: 0, hover: 0, fired: false },  // M1 upper (top=76 ✓)
+  { x: 640, y:  72, sz: NEURAL_SZ, glow: 0, hover: 0, fired: false },  // M2 top-right bleed (top=60 ✓, right=652)
+  { x: 478, y: 272, sz: NEURAL_SZ, glow: 0, hover: 0, fired: false },  // M3 central hub
+  { x: 602, y: 228, sz: NEURAL_SZ, glow: 0, hover: 0, fired: false },  // M4 right-upper
+  { x: 392, y: 355, sz: NEURAL_SZ, glow: 0, hover: 0, fired: false },  // M5 lower-left (bot=367 ✓)
+  { x: 550, y: 355, sz: NEURAL_SZ, glow: 0, hover: 0, fired: false },  // M6 lower-center (bot=367 ✓)
+  { x: 640, y: 298, sz: NEURAL_SZ, glow: 0, hover: 0, fired: false },  // M7 right bleed (right=652)
+];
+const ALL_NODES = [...CHAIN, BRIDGE, ...MESH];
+
+// ── Edge definitions ─────────────────────────────────────────────────────
+// Chain: straight lines (blockchain = ordered, geometric)
+const CHAIN_EDGES = [
+  { a: CHAIN[0], b: CHAIN[1] },
+  { a: CHAIN[1], b: CHAIN[2] },
+  { a: CHAIN[2], b: CHAIN[3] },
+  { a: CHAIN[3], b: BRIDGE   },
+];
+
+// Mesh: bezier curves — triangulated web.
+// Primary surge paths: BR→M0, BR→M3, BR→M5
+// Ripple: M0→M1→M2, M1→M4→M7, M3→M4(vis), M3→M6, M5→M6→M7
+const MESH_EDGES = [
+  { a: BRIDGE,  b: MESH[0], cp1: [368,212],  cp2: [432,152]  },  // BR→M0
+  { a: BRIDGE,  b: MESH[3], cp1: [392,258],  cp2: [452,268]  },  // BR→M3
+  { a: BRIDGE,  b: MESH[5], cp1: [352,292],  cp2: [382,338]  },  // BR→M5
+  { a: MESH[0], b: MESH[1], cp1: [488,128],  cp2: [532, 92]  },  // M0→M1
+  { a: MESH[0], b: MESH[3], cp1: [458,192],  cp2: [472,248]  },  // M0→M3 (visual)
+  { a: MESH[1], b: MESH[2], cp1: [588, 84],  cp2: [622, 72]  },  // M1→M2
+  { a: MESH[1], b: MESH[4], cp1: [568,142],  cp2: [596,198]  },  // M1→M4
+  { a: MESH[2], b: MESH[4], cp1: [640,132],  cp2: [618,192]  },  // M2→M4 (visual)
+  { a: MESH[3], b: MESH[4], cp1: [522,262],  cp2: [576,240]  },  // M3→M4
+  { a: MESH[3], b: MESH[5], cp1: [448,302],  cp2: [402,338]  },  // M3→M5 (visual)
+  { a: MESH[3], b: MESH[6], cp1: [502,308],  cp2: [540,340]  },  // M3→M6
+  { a: MESH[4], b: MESH[7], cp1: [616,254],  cp2: [636,278]  },  // M4→M7
+  { a: MESH[5], b: MESH[6], cp1: [440,354],  cp2: [510,356]  },  // M5→M6
+  { a: MESH[6], b: MESH[7], cp1: [582,350],  cp2: [628,320]  },  // M6→M7
+];
+
+// ── Surge ────────────────────────────────────────────────────────────────
+// Style: gradient window stroke traveling along the edge path — no dot, no trail.
+// Same visual language as blockchain.html / ai-agent.html.
+// CHAIN_SPD ≈ 0.022/frame → ~0.75s per hop at 60fps
+// MESH_SPD  ≈ 0.012/frame → ~1.4s per mesh edge
+const CHAIN_SPD = 0.025;  // matches ai-agent PSPEED = 0.025/frame
+const MESH_SPD  = 0.025;
+
+class Surge {
+  constructor(fromNode, toNode, cp1, cp2, spd) {
+    this.a = fromNode; this.b = toNode;
+    this.cp1 = cp1 || null; this.cp2 = cp2 || null;
+    this.spd = spd; this.t = 0;
+    this.done = false; this.hit = false;
+  }
+  step() {
+    this.t += this.spd;
+    if (this.t >= 1) { this.t = 1; this.done = true; }
+  }
+}
+
+// ── State machine ─────────────────────────────────────────────────────────
+// 4 chain hops → DIGEST → SCATTER (triangulated wave) → COOLDOWN
+
+// CHAIN[0..3], 4 hops: C0→C1(CHAIN_0), C1→C2(CHAIN_1), C2→C3(CHAIN_2), C3→BR(CHAIN_3)
+// nextDst = ci < CHAIN.length-2 ? CHAIN[ci+2] : BRIDGE  →  ci<2 ? CHAIN[ci+2] : BRIDGE
+const CHAIN_PHASES = ['CHAIN_0','CHAIN_1','CHAIN_2','CHAIN_3'];
+const DIGEST_MS   = 350;
+const COOLDOWN_MS = 1400;
+
+let phase  = 'IDLE';
+let surges = [];
+let timer  = 0;
+
+function kick() {
+  for (const n of MESH) n.fired = false;
+  CHAIN[0].glow = 1;
+  surges = [new Surge(CHAIN[0], CHAIN[1], null, null, CHAIN_SPD)];
+  phase  = 'CHAIN_0';
+}
+setTimeout(kick, 80);
+
+// ── Dot grid — grey variant ───────────────────────────────────────────────
+function drawGrid() {
+  const spacing = 36;
+  const cx = VW/2, cy = VH/2, maxDist = 800;
+  for (let x = spacing/2; x < VW; x += spacing) {
+    for (let y = spacing/2; y < VH; y += spacing) {
+      const dx = x-cx, dy = y-cy;
+      const dist = Math.sqrt(dx*dx+dy*dy);
+      if (dist > maxDist) continue;
+      const f = 1 - dist/maxDist;
+      let r = 1.4*f*Math.min(sx,sy);
+      if (r < 0.1) continue;
+      let op = f*0.22;
+      if (mx > -9000) {
+        const md = Math.sqrt((x-mx)**2+(y-my)**2);
+        if (md < 130) { const u = 1-md/130; r *= 1+1.8*u; op = Math.min(0.35, op*(1+0.5*u)); }
+      }
+      ctx.fillStyle = `rgba(0,0,0,${op.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(Math.round(x*sx), Math.round(y*sy), Math.round(r*2)/2, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+}
+
+// ── Edge drawing ─────────────────────────────────────────────────────────
+function drawChainEdge(e) {
+  const sc = Math.min(sx,sy);
+  const x0=e.a.x*sx, y0=e.a.y*sy, x1=e.b.x*sx, y1=e.b.y*sy;
+  const g = ctx.createLinearGradient(x0,y0,x1,y1);
+  g.addColorStop(0,'rgba(16,120,243,0)'); g.addColorStop(0.07,'rgba(16,120,243,0.32)');
+  g.addColorStop(0.93,'rgba(16,120,243,0.32)'); g.addColorStop(1,'rgba(16,120,243,0)');
+  ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y1);
+  ctx.strokeStyle=g; ctx.lineWidth=1.4*sc; ctx.lineCap='round'; ctx.stroke();
+}
+
+function drawMeshEdge(e) {
+  const sc = Math.min(sx,sy);
+  const x0=e.a.x*sx, y0=e.a.y*sy, x1=e.b.x*sx, y1=e.b.y*sy;
+  const g = ctx.createLinearGradient(x0,y0,x1,y1);
+  g.addColorStop(0,'rgba(142,213,255,0)'); g.addColorStop(0.07,'rgba(142,213,255,0.28)');
+  g.addColorStop(0.93,'rgba(142,213,255,0.28)'); g.addColorStop(1,'rgba(142,213,255,0)');
+  ctx.beginPath(); ctx.moveTo(x0,y0);
+  ctx.bezierCurveTo(e.cp1[0]*sx, e.cp1[1]*sy, e.cp2[0]*sx, e.cp2[1]*sy, x1,y1);
+  ctx.strokeStyle=g; ctx.lineWidth=1.0*sc; ctx.lineCap='round'; ctx.stroke();
+}
+
+// ── Surge drawing — gradient window stroke (Design DNA style) ────────────
+// A bright stripe of #1078f3 rides the edge path, fading ±0.20 around t.
+// Edge-enter/exit taper: 0→0.07 fade in, 0.85→1.0 fade out (same as blockchain.html).
+function drawSurge(s) {
+  const sc = Math.min(sx, sy);
+  const t  = s.t;
+  if (t <= 0) return;
+
+  let edgeFade = 1;
+  if      (t < 0.07) edgeFade = t / 0.07;
+  else if (t > 0.85) edgeFade = Math.max(0, (1 - t) / 0.15);
+  const opacity = 0.92 * edgeFade;
+  const start   = Math.max(0, t - 0.20);
+  const end     = Math.min(1, t + 0.20);
+
+  const ax = s.a.x*sx, ay = s.a.y*sy;
+  const bx = s.b.x*sx, by = s.b.y*sy;
+  const grad = ctx.createLinearGradient(ax, ay, bx, by);
+  grad.addColorStop(0, 'rgba(16,120,243,0)');
+  if (start > 0.001) grad.addColorStop(start, 'rgba(16,120,243,0)');
+  grad.addColorStop(Math.min(t, 1), `rgba(16,120,243,${opacity.toFixed(3)})`);
+  if (end < 0.999)   grad.addColorStop(end,   'rgba(16,120,243,0)');
+  grad.addColorStop(1, 'rgba(16,120,243,0)');
+
+  const isChain = !s.cp1;
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  if (isChain) {
+    ctx.lineTo(bx, by);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth   = 3.2 * sc;
+  } else {
+    ctx.bezierCurveTo(s.cp1[0]*sx, s.cp1[1]*sy, s.cp2[0]*sx, s.cp2[1]*sy, bx, by);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth   = 2.4 * sc;
+  }
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ── Node drawing ─────────────────────────────────────────────────────────
+let pulseT = 0;
+
+function b3colors(u0,u1,u2) {
+  function b3(r0,g0,b0,a0,r1,g1,b1,a1,r2,g2,b2,a2) {
+    return `rgba(${(r0*u0+r1*u1+r2*u2+.5)|0},${(g0*u0+g1*u1+g2*u2+.5)|0},${(b0*u0+b1*u1+b2*u2+.5)|0},${(a0*u0+a1*u1+a2*u2).toFixed(2)})`;
+  }
+  return {
+    fill: b3(255,255,255,1,238,248,255,1,230,244,255,0.9),
+    brd:  b3(16,120,243,0.70,16,120,243,0.95,89,188,255,0.90),
+    rng:  b3(16,120,243,0.55,16,120,243,0.85,89,188,255,0.75),
+    dot:  b3(16,120,243,0.80,16,120,243,1,16,120,243,1),
+  };
+}
+
+function drawSquareNode(n) {
+  const sc=Math.min(sx,sy), gl=Math.max(0,n.glow), hv=n.hover;
+  const u2=gl, u1=hv*(1-gl), u0=1-u1-u2, C=b3colors(u0,u1,u2);
+  ctx.save(); ctx.translate(n.x*sx, n.y*sy);
+  if (hv>0.001) ctx.scale(1+0.08*hv, 1+0.08*hv);
+  const h=n.sz*sc, rr=h*0.28;
+  if (hv>0.001) {
+    for (let i=0;i<2;i++) {
+      const raw=(pulseT+i*0.5)%1, ph=h*(1.15+raw*2), pr=ph*0.28;
+      ctx.beginPath();
+      ctx.moveTo(-ph+pr,-ph); ctx.arcTo(ph,-ph,ph,ph,pr); ctx.arcTo(ph,ph,-ph,ph,pr);
+      ctx.arcTo(-ph,ph,-ph,-ph,pr); ctx.arcTo(-ph,-ph,ph,-ph,pr); ctx.closePath();
+      ctx.strokeStyle=`rgba(16,120,243,${((1-raw)*0.11*hv).toFixed(3)})`; ctx.lineWidth=1.3*sc; ctx.stroke();
+    }
+  }
+  ctx.beginPath();
+  ctx.moveTo(-h+rr,-h); ctx.arcTo(h,-h,h,h,rr); ctx.arcTo(h,h,-h,h,rr);
+  ctx.arcTo(-h,h,-h,-h,rr); ctx.arcTo(-h,-h,h,-h,rr); ctx.closePath();
+  ctx.fillStyle=C.fill; ctx.fill(); ctx.strokeStyle=C.brd; ctx.lineWidth=1.5*sc; ctx.stroke();
+  const ir=h*0.55, ir2=ir*0.28;
+  ctx.beginPath();
+  ctx.moveTo(-ir+ir2,-ir); ctx.arcTo(ir,-ir,ir,ir,ir2); ctx.arcTo(ir,ir,-ir,ir,ir2);
+  ctx.arcTo(-ir,ir,-ir,-ir,ir2); ctx.arcTo(-ir,-ir,ir,-ir,ir2); ctx.closePath();
+  ctx.strokeStyle=C.rng; ctx.lineWidth=1.0*sc; ctx.stroke();
+  ctx.beginPath(); ctx.arc(0,0,h*0.22,0,Math.PI*2); ctx.fillStyle=C.dot; ctx.fill();
+  ctx.restore();
+}
+
+function drawCircleNode(n) {
+  const sc=Math.min(sx,sy), gl=Math.max(0,n.glow), hv=n.hover;
+  const u2=gl, u1=hv*(1-gl), u0=1-u1-u2, C=b3colors(u0,u1,u2);
+  ctx.save(); ctx.translate(n.x*sx, n.y*sy);
+  if (hv>0.001) ctx.scale(1+0.08*hv, 1+0.08*hv);
+  const r=n.sz*sc;
+  if (hv>0.001) {
+    for (let i=0;i<2;i++) {
+      const raw=(pulseT+i*0.5)%1;
+      ctx.beginPath(); ctx.arc(0,0,r*(1.15+raw*2),0,Math.PI*2);
+      ctx.strokeStyle=`rgba(16,120,243,${((1-raw)*0.11*hv).toFixed(3)})`; ctx.lineWidth=1.3*sc; ctx.stroke();
+    }
+  }
+  ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2);
+  ctx.fillStyle=C.fill; ctx.fill(); ctx.strokeStyle=C.brd; ctx.lineWidth=1.5*sc; ctx.stroke();
+  ctx.restore();
+}
+
+function drawBridgeNode() {
+  const sc=Math.min(sx,sy), n=BRIDGE, gl=Math.max(0,n.glow), hv=n.hover, pv=Math.max(hv,gl);
+  const u2=gl, u1=hv*(1-gl), u0=1-u1-u2, C=b3colors(u0,u1,u2);
+  ctx.save(); ctx.translate(n.x*sx, n.y*sy);
+  if (hv>0.001) ctx.scale(1+0.08*hv, 1+0.08*hv);
+  const r=n.sz*sc;
+  if (pv>0.001) {
+    for (let i=0;i<2;i++) {
+      const raw=(pulseT+i*0.5)%1;
+      ctx.beginPath(); ctx.arc(0,0,r*(1.15+raw*2),0,Math.PI*2);
+      ctx.strokeStyle=`rgba(16,120,243,${((1-raw)*0.13*pv).toFixed(3)})`; ctx.lineWidth=1.3*sc; ctx.stroke();
+    }
+  }
+  ctx.beginPath(); ctx.arc(0,0,r*1.52,0,Math.PI*2);
+  ctx.strokeStyle=`rgba(16,120,243,${(0.22+pv*0.28).toFixed(2)})`; ctx.lineWidth=0.9*sc; ctx.stroke();
+  ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2);
+  ctx.fillStyle=C.fill; ctx.fill(); ctx.strokeStyle=C.brd; ctx.lineWidth=1.8*sc; ctx.stroke();
+  const csz=5.2*sc;
+  ctx.strokeStyle=`rgba(16,120,243,${(0.40+Math.min(1,u1+u2)*0.52).toFixed(2)})`;
+  ctx.lineWidth=1.4*sc; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(-csz,0); ctx.lineTo(csz,0);
+  ctx.moveTo(0,-csz); ctx.lineTo(0,csz); ctx.stroke();
+  ctx.restore();
+}
+
+// ── Animation loop ────────────────────────────────────────────────────────
+let lastTs = 0;
+
+function frame(ts) {
+  const dt = Math.min((ts-lastTs)/1000, 0.05);
+  lastTs = ts;
+  pulseT = (pulseT + dt*0.28) % 1;
+
+  const kRise = 1 - Math.pow(0.003, dt);
+  const kFall = 1 - Math.pow(0.030, dt);
+
+  for (const n of ALL_NODES) {
+    const hr  = n === BRIDGE ? n.sz*1.9 : n.sz*1.65;
+    const tgt = mx > -9000 && Math.hypot(mx-n.x, my-n.y) < hr ? 1 : 0;
+    n.hover  += (tgt - n.hover) * (tgt > n.hover ? kRise : kFall);
+  }
+
+  // Chain hops: CHAIN_0: C0→C1, CHAIN_1: C1→C2, CHAIN_2: C2→C3, CHAIN_3: C3→BRIDGE
+  // nextDst formula: ci<(CHAIN.length-2) ? CHAIN[ci+2] : BRIDGE  →  ci<2 ? CHAIN[ci+2] : BRIDGE
+  const ci = CHAIN_PHASES.indexOf(phase);
+  if (ci >= 0) {
+    surges[0].step();
+    if (surges[0].done) {
+      if (ci < CHAIN_PHASES.length - 1) {
+        const nextSrc = CHAIN[ci + 1];
+        const nextDst = ci < CHAIN.length - 2 ? CHAIN[ci + 2] : BRIDGE;
+        nextSrc.glow = 1;
+        surges = [new Surge(nextSrc, nextDst, null, null, CHAIN_SPD)];
+        phase  = CHAIN_PHASES[ci + 1];
+      } else {
+        BRIDGE.glow = 1; surges = []; timer = DIGEST_MS; phase = 'DIGEST';
+      }
+    }
+  }
+
+  else if (phase === 'DIGEST') {
+    timer -= dt * 1000;
+    if (timer <= 0) {
+      surges = [
+        new Surge(BRIDGE, MESH[0], [368,212], [432,152], MESH_SPD),
+        new Surge(BRIDGE, MESH[3], [392,258], [452,268], MESH_SPD),
+        new Surge(BRIDGE, MESH[5], [352,292], [382,338], MESH_SPD),
+      ];
+      phase = 'SCATTER';
+    }
+  }
+
+  else if (phase === 'SCATTER') {
+    for (const s of surges) { if (!s.done) s.step(); }
+    const secondary = [];
+    for (const s of surges) {
+      if (s.done && !s.hit) {
+        s.hit = true; s.b.glow = 1;
+        if (!s.b.fired) {
+          s.b.fired = true;
+          const b = s.b;
+          if (b === MESH[0]) secondary.push(new Surge(MESH[0], MESH[1], [488,128],[532, 92], MESH_SPD));
+          if (b === MESH[1]) {
+            secondary.push(new Surge(MESH[1], MESH[2], [588, 84],[622, 72], MESH_SPD));
+            secondary.push(new Surge(MESH[1], MESH[4], [568,142],[596,198], MESH_SPD));
+          }
+          if (b === MESH[3]) {
+            secondary.push(new Surge(MESH[3], MESH[4], [522,262],[576,240], MESH_SPD));
+            secondary.push(new Surge(MESH[3], MESH[6], [502,308],[540,340], MESH_SPD));
+          }
+          if (b === MESH[4]) secondary.push(new Surge(MESH[4], MESH[7], [616,254],[636,278], MESH_SPD));
+          if (b === MESH[5]) secondary.push(new Surge(MESH[5], MESH[6], [440,354],[510,356], MESH_SPD));
+          if (b === MESH[6]) secondary.push(new Surge(MESH[6], MESH[7], [582,350],[628,320], MESH_SPD));
+        }
+      }
+    }
+    for (const s of secondary) surges.push(s);
+    if (surges.length > 0 && surges.every(s => s.done)) {
+      for (const s of surges) { if (!s.hit) { s.hit = true; s.b.glow = 1; } }
+      surges = []; timer = COOLDOWN_MS; phase = 'COOLDOWN';
+    }
+  }
+
+  else if (phase === 'COOLDOWN') {
+    timer -= dt * 1000;
+    const fk = 1 - Math.pow(0.006, dt);
+    for (const n of ALL_NODES) n.glow = Math.max(0, n.glow*(1-fk));
+    if (timer <= 0) kick();
+  }
+
+  if (phase !== 'COOLDOWN' && phase !== 'IDLE') {
+    for (const n of ALL_NODES) n.glow *= 0.9988;
+  }
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawGrid();
+  for (const e of CHAIN_EDGES) drawChainEdge(e);
+  for (const e of MESH_EDGES)  drawMeshEdge(e);
+  for (const s of surges) { if (s.t > 0 && s.t < 1) drawSurge(s); }
+  for (const n of CHAIN) drawSquareNode(n);
+  drawBridgeNode();
+  for (const n of MESH)  drawCircleNode(n);
+
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

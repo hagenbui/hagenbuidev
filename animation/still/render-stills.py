@@ -11,13 +11,15 @@ try:
     chrome_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     
     anims = [
-        ("ai-agent.html", "section1-anim1-640x428"),
-        ("data-flow.html", "section1-anim2-640x428"),
-        ("blockchain.html", "section1-anim3-640x428")
+        ("homepage/ai-agent.html", "section1-anim1-640x428"),
+        ("homepage/data-flow.html", "section1-anim2-640x428"),
+        ("homepage/blockchain.html", "section1-anim3-640x428"),
+        ("about/about-hero.html", "about-hero-640x428"),
+        ("about/about-hero-right.html", "about-hero-right-640x428")
     ]
     
     for anim_file, name in anims:
-        url = f"http://localhost:8080/anim/{anim_file}"
+        url = f"http://localhost:8080/{anim_file}"
         png_path = f"/Users/HagenBui/Coding/hagenbuidev/animation/still/{name}.png"
         jpg_path = f"/Users/HagenBui/Coding/hagenbuidev/animation/still/{name}.jpg"
         

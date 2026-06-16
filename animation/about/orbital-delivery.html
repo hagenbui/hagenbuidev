@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Varmeta Delivery</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; background:transparent; overflow:hidden; }
+    canvas { display:block; width:100%; height:100%; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+// Varmeta hub at canvas center. 6 partner nodes on a perfect circle, evenly spaced.
+// Hub delivers outward — surges travel along radial spokes.
+//
+// KEY: uses a uniform ctx.scale(scale,scale) transform so the ring arc is always
+// a geometrically perfect circle regardless of window aspect ratio.
+//
+// Speed: SURGE_SPD = 0.025/frame — matches ai-agent PSPEED (Design DNA).
+// DESIGN DNA: travel #1078f3, secondary #8ed5ff. Gradient-window stroke surge.
+
+const VW = 640, VH = 428;
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const dpr    = window.devicePixelRatio || 1;
+
+// Single uniform scale — keeps circles circular at any window aspect ratio.
+let scale = 1, offX = 0, offY = 0;
+
+function resize() {
+  canvas.width  = Math.round(canvas.clientWidth  * dpr);
+  canvas.height = Math.round(canvas.clientHeight * dpr);
+  scale = Math.min(canvas.width / VW, canvas.height / VH);
+  offX  = (canvas.width  - VW * scale) * 0.5;
+  offY  = (canvas.height - VH * scale) * 0.5;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Canvas virtual center
+const CX = VW / 2;  // 320
+const CY = VH / 2;  // 214
+
+// ── Mouse (converted to virtual coords) ──────────────────────────────────
+let mx = -9999, my = -9999;
+canvas.addEventListener('mousemove', e => {
+  const r  = canvas.getBoundingClientRect();
+  const px = (e.clientX - r.left) * (canvas.width  / r.width);
+  const py = (e.clientY - r.top)  * (canvas.height / r.height);
+  mx = (px - offX) / scale;
+  my = (py - offY) / scale;
+});
+canvas.addEventListener('mouseleave', () => { mx = -9999; my = -9999; });
+
+// ── Hub (Varmeta) ─────────────────────────────────────────────────────────
+const HUB = { x: CX, y: CY, sz: 44, glow: 0, hover: 0 };
+
+// ── Partner nodes — perfect hexagon ──────────────────────────────────────
+// RING_R=148: top/bottom nodes sit exactly 48px from canvas edge (pad rule).
+//   top y = 214-148 = 66 → edge 66-18 = 48 ✓   bot y = 214+148 = 362 → 362+18 = 380, 428-380 = 48 ✓
+const N_NODES = 6;
+const RING_R  = 148;
+const NODE_SZ = 18;
+
+const NODES = Array.from({ length: N_NODES }, (_, i) => {
+  const angle = -Math.PI / 2 + (i / N_NODES) * Math.PI * 2;
+  return { x: CX + RING_R * Math.cos(angle), y: CY + RING_R * Math.sin(angle),
+           angle, sz: NODE_SZ, glow: 0, hover: 0 };
+});
+
+const EDGES   = NODES.map(n => ({ from: HUB, to: n }));
+const ALL     = [HUB, ...NODES];
+
+// ── Surge ─────────────────────────────────────────────────────────────────
+const SURGE_SPD = 0.025;  // matches ai-agent PSPEED = 0.025/frame (Design DNA)
+
+class Surge {
+  constructor(edge) { this.edge = edge; this.t = 0; this.done = false; this.hit = false; }
+  step() { this.t += SURGE_SPD; if (this.t >= 1) { this.t = 1; this.done = true; } }
+}
+
+// Gradient-window stroke — same style as dual-expert / ai-agent.
+// All coords are in virtual space (inside ctx.scale transform).
+function drawSurge(s) {
+  const t = s.t;
+  if (t <= 0 || t >= 1) return;
+  let edgeFade = 1;
+  if      (t < 0.07) edgeFade = t / 0.07;
+  else if (t > 0.85) edgeFade = Math.max(0, (1 - t) / 0.15);
+  const opacity = 0.92 * edgeFade;
+  const start   = Math.max(0, t - 0.20);
+  const end     = Math.min(1, t + 0.20);
+  const { from: a, to: b } = s.edge;
+  const grad = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+  grad.addColorStop(0, 'rgba(16,120,243,0)');
+  if (start > 0.001) grad.addColorStop(start, 'rgba(16,120,243,0)');
+  grad.addColorStop(Math.min(t, 1), `rgba(16,120,243,${opacity.toFixed(3)})`);
+  if (end < 0.999)   grad.addColorStop(end,   'rgba(16,120,243,0)');
+  grad.addColorStop(1, 'rgba(16,120,243,0)');
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+  ctx.strokeStyle = grad; ctx.lineWidth = 2.8; ctx.lineCap = 'round'; ctx.stroke();
+  ctx.restore();
+}
+
+// ── State machine ──────────────────────────────────────────────────────────
+const CHARGE_MS  = 420;
+const COOLDOWN_MS = 1000;
+let phase = 'IDLE', timer = 0, surges = [], cycleN = 0;
+
+function kick() {
+  cycleN++;
+  phase = 'CHARGE'; timer = CHARGE_MS;
+  HUB.glow = Math.min(1, HUB.glow + 0.45);
+}
+setTimeout(kick, 100);
+
+// ── Grey dot grid — inside scale transform ────────────────────────────────
+function drawGrid() {
+  const spacing = 36, cx = VW/2, cy = VH/2, maxDist = 800;
+  for (let x = spacing/2; x < VW; x += spacing) {
+    for (let y = spacing/2; y < VH; y += spacing) {
+      const dx = x-cx, dy = y-cy, dist = Math.sqrt(dx*dx+dy*dy);
+      if (dist > maxDist) continue;
+      const f = 1 - dist/maxDist;
+      let r = 1.4*f;
+      if (r < 0.1) continue;
+      let op = f*0.22;
+      if (mx > -9000) {
+        const md = Math.sqrt((x-mx)**2+(y-my)**2);
+        if (md < 130) { const u=1-md/130; r*=1+1.8*u; op=Math.min(0.35,op*(1+0.5*u)); }
+      }
+      ctx.fillStyle = `rgba(0,0,0,${op.toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+    }
+  }
+}
+
+// ── Color helpers ─────────────────────────────────────────────────────────
+// Hub: white fill, secondary blue (#8ed5ff) stroke at idle, primary blue on surge
+function hubColors(u0, u1, u2) {
+  const act = u1 + u2;
+  function lerp(a,b,t) { return (a + (b-a)*t + .5)|0; }
+  return {
+    fill: '#ffffff',
+    brd:  `rgba(${lerp(142,16,act)},${lerp(213,120,act)},${lerp(255,243,act)},${(0.60+act*0.35).toFixed(2)})`,
+    rng:  `rgba(${lerp(142,16,act)},${lerp(213,120,act)},${lerp(255,243,act)},${(0.35+act*0.45).toFixed(2)})`,
+    dot:  `rgba(16,120,243,${(0.50+act*0.45).toFixed(2)})`,
+  };
+}
+// Partner node: white fill, grey border at idle → blue on hover/surge
+function nodeColors(u0, u1, u2) {
+  const act = u1 + u2;
+  function lerp(a,b,t) { return (a + (b-a)*t + .5)|0; }
+  return {
+    fill: '#ffffff',
+    brd:  act < 0.001
+      ? 'rgba(0,0,0,0.09)'
+      : `rgba(${lerp(0,16,act)},${lerp(0,120,act)},${lerp(0,243,act)},${(0.09+act*0.81).toFixed(2)})`,
+    dot:  `rgba(16,120,243,${(0.15+act*0.75).toFixed(2)})`,
+  };
+}
+
+let pulseT = 0;
+
+// ── Draw outer ring — ctx.arc in virtual space → geometrically perfect circle ─
+function drawRing() {
+  ctx.beginPath();
+  ctx.arc(CX, CY, RING_R, 0, Math.PI*2);
+  ctx.strokeStyle = 'rgba(142,213,255,0.20)';
+  ctx.lineWidth   = 1.0;
+  ctx.stroke();
+}
+
+// ── Draw spoke edge ────────────────────────────────────────────────────────
+function drawEdge(e) {
+  const { x: ax, y: ay } = e.from;
+  const { x: bx, y: by } = e.to;
+  const g = ctx.createLinearGradient(ax, ay, bx, by);
+  g.addColorStop(0,    'rgba(142,213,255,0)');
+  g.addColorStop(0.12, 'rgba(142,213,255,0.22)');
+  g.addColorStop(0.88, 'rgba(142,213,255,0.22)');
+  g.addColorStop(1,    'rgba(142,213,255,0)');
+  ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+  ctx.strokeStyle = g; ctx.lineWidth = 1.1; ctx.stroke();
+}
+
+// ── Draw hub ───────────────────────────────────────────────────────────────
+function drawHub() {
+  const gl = Math.max(0, HUB.glow), hv = HUB.hover, pv = Math.max(hv, gl);
+  const u2 = gl, u1 = hv*(1-gl), u0 = 1-u1-u2, C = hubColors(u0, u1, u2);
+  ctx.save(); ctx.translate(HUB.x, HUB.y);
+  if (hv > 0.001) ctx.scale(1+0.08*hv, 1+0.08*hv);
+  const r = HUB.sz;
+
+  if (pv > 0.001) {
+    for (let i = 0; i < 2; i++) {
+      const raw = (pulseT + i*0.5) % 1;
+      ctx.beginPath(); ctx.arc(0, 0, r*(1.15+raw*2.0), 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(16,120,243,${((1-raw)*0.14*pv).toFixed(3)})`;
+      ctx.lineWidth = 1.4; ctx.stroke();
+    }
+  }
+
+  ctx.beginPath(); ctx.arc(0, 0, r*1.52, 0, Math.PI*2);
+  ctx.strokeStyle = `rgba(16,120,243,${(0.20+pv*0.28).toFixed(2)})`;
+  ctx.lineWidth = 0.9; ctx.stroke();
+
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2);
+  ctx.fillStyle = C.fill; ctx.fill(); ctx.strokeStyle = C.brd; ctx.lineWidth = 1.8; ctx.stroke();
+
+  ctx.beginPath(); ctx.arc(0, 0, r*0.62, 0, Math.PI*2);
+  ctx.strokeStyle = C.rng; ctx.lineWidth = 1.0; ctx.stroke();
+
+  const csz = 5.8;
+  ctx.strokeStyle = `rgba(16,120,243,${(0.38+Math.min(1,u1+u2)*0.52).toFixed(2)})`;
+  ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-csz,0); ctx.lineTo(csz,0); ctx.moveTo(0,-csz); ctx.lineTo(0,csz); ctx.stroke();
+  ctx.restore();
+}
+
+// ── Draw partner node ──────────────────────────────────────────────────────
+function drawNode(n) {
+  const gl = Math.max(0,n.glow), hv = n.hover;
+  const u2 = gl, u1 = hv*(1-gl), u0 = 1-u1-u2;
+  const C = nodeColors(u0, u1, u2);
+  ctx.save(); ctx.translate(n.x, n.y);
+  if (hv > 0.001) ctx.scale(1+0.08*hv, 1+0.08*hv);
+  const r = n.sz;
+
+  if (hv > 0.001) {
+    for (let i = 0; i < 2; i++) {
+      const raw = (pulseT + i*0.5) % 1;
+      ctx.beginPath(); ctx.arc(0, 0, r*(1.15+raw*2.0), 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(16,120,243,${((1-raw)*0.11*hv).toFixed(3)})`;
+      ctx.lineWidth = 1.2; ctx.stroke();
+    }
+  }
+
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2);
+  ctx.fillStyle = C.fill; ctx.fill(); ctx.strokeStyle = C.brd; ctx.lineWidth = 1.5; ctx.stroke();
+
+  ctx.beginPath(); ctx.arc(0, 0, r*0.30, 0, Math.PI*2);
+  ctx.fillStyle = C.dot; ctx.fill();
+  ctx.restore();
+}
+
+// ── Animation loop ─────────────────────────────────────────────────────────
+let lastTs = 0;
+
+function frame(ts) {
+  const dt = Math.min((ts - lastTs) / 1000, 0.05);
+  lastTs = ts;
+  pulseT = (pulseT + dt*0.28) % 1;
+
+  const kRise = 1 - Math.pow(0.003, dt);
+  const kFall = 1 - Math.pow(0.030, dt);
+
+  for (const n of ALL) {
+    const hr  = n === HUB ? n.sz*1.9 : n.sz*1.7;
+    const tgt = mx > -9000 && Math.hypot(mx-n.x, my-n.y) < hr ? 1 : 0;
+    n.hover  += (tgt - n.hover) * (tgt > n.hover ? kRise : kFall);
+  }
+
+  if (phase === 'CHARGE') {
+    HUB.glow = Math.min(1, HUB.glow + dt*2.0);
+    timer -= dt*1000;
+    if (timer <= 0) {
+      const targets = (cycleN % 4 === 0)
+        ? [...NODES]
+        : [...NODES].sort(() => Math.random()-0.5).slice(0, 1 + Math.floor(Math.random()*3));
+      surges = targets.map(n => new Surge(EDGES.find(e => e.to === n)));
+      phase  = 'FIRE';
+    }
+  }
+  else if (phase === 'FIRE') {
+    for (const s of surges) { if (!s.done) s.step(); }
+    for (const s of surges) { if (s.done && !s.hit) { s.hit = true; s.edge.to.glow = 1; } }
+    HUB.glow += (0.15 - HUB.glow) * kFall * 0.5;
+    if (surges.every(s => s.done)) { surges = []; timer = COOLDOWN_MS; phase = 'COOLDOWN'; }
+  }
+  else if (phase === 'COOLDOWN') {
+    timer -= dt*1000;
+    const fk = 1 - Math.pow(0.010, dt);
+    for (const n of NODES) n.glow = Math.max(0, n.glow*(1-fk));
+    HUB.glow *= (1-fk*0.4);
+    if (timer <= 0) kick();
+  }
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Everything drawn in virtual coordinate space (uniform scale = perfect circle)
+  ctx.save();
+  ctx.translate(offX, offY);
+  ctx.scale(scale, scale);
+
+  drawGrid();
+  drawRing();
+  for (const e of EDGES) drawEdge(e);
+  for (const s of surges) drawSurge(s);
+  for (const n of NODES) drawNode(n);
+  drawHub();
+
+  ctx.restore();
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

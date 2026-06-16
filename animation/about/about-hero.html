@@ -5,8 +5,8 @@
   <title>About — Hero</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    html, body { width:100%; height:100%; overflow:hidden; background:#fff; }
-    canvas { display:block; width:100%; height:100%; }
+    html, body { width:100%; height:100%; overflow:hidden; background:transparent; }
+    canvas { display:block; width:100%; height:100%; min-width:1280px; }
   </style>
 </head>
 <body>
@@ -15,7 +15,7 @@
 'use strict';
 
 // ── Canvas ────────────────────────────────────────────────────────────
-const VW = 1200, VH = 560;
+const VW = 1440, VH = 560;
 const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
 const dpr    = window.devicePixelRatio || 1;
@@ -30,9 +30,9 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// ── Burst origin: bottom-right corner ────────────────────────────────
-const FOCAL_SX = VW;
-const FOCAL_SY = VH;
+// ── Burst origin: bottom-center (offset below edge to hide convergence point) ──
+const FOCAL_SX = VW * 0.5;
+const FOCAL_SY = VH + 40;
 const CAM_Z    = 1400;   // perspective focal length
 
 function project(x, y, z) {
@@ -46,14 +46,19 @@ function rnd() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 42949
 
 // ── Build strings ─────────────────────────────────────────────────────
 // In world coords (y-up):
-//   angle = π/2  →  dx=0, dy=1  → tip at top-right  (right edge)
-//   angle = 3π/4 →  dx=-0.707, dy=0.707  → diagonal upper-left
-//   angle = π    →  dx=-1, dy=0  → tip at bottom-left  (bottom edge)
-// Strings fan across this quarter-circle, all pointing into the canvas.
+//   angle = 0    →  dx=1, dy=0  → tip at right
+//   angle = π    →  dx=-1, dy=0  → tip at left
+// Strings fan across this half-circle, pointing into the top half of the canvas.
 const N         = 240;
-const ANGLE_MIN = Math.PI * 0.50;   // up  (right edge)
-const ANGLE_MAX = Math.PI * 1.00;   // left (bottom edge)
-const Z_SPREAD  = 0.44;             // depth variation  →  3-D sphere feel
+const ANGLE_MIN = 0.0;              // horizontal right
+const ANGLE_MAX = Math.PI;          // horizontal left
+const Z_SPREAD  = 0.70;             // depth variation  →  3-D sphere feel
+
+// Before the loop, create a set of 8 random indices to distribute initial sparks evenly
+const activeIndices = new Set();
+while (activeIndices.size < 8) {
+  activeIndices.add(Math.floor(rnd() * N));
+}
 
 const strings = [];
 for (let i = 0; i < N; i++) {
@@ -61,22 +66,31 @@ for (let i = 0; i < N; i++) {
   const jitter  = (rnd() - 0.5) * 0.055;   // per-string angular jitter → fuzziness
   const angle2d = ANGLE_MIN + frac * (ANGLE_MAX - ANGLE_MIN) + jitter;
 
-  // 2-D base direction + random z offset
+  // 2-D base direction + systematic depth offset for even distribution
   let dx = Math.cos(angle2d);
   let dy = Math.sin(angle2d);
-  let dz = (rnd() * 2 - 1) * Z_SPREAD;
+  
+  // Distribute dz evenly across 6 depth levels, biased towards the camera
+  const depthLevels = 6;
+  const depthIndex = i % depthLevels;
+  const dzRaw = -1.0 + (depthIndex / (depthLevels - 1)) * 1.45;
+  let dz = dzRaw * Z_SPREAD;
 
   // Normalise so all strings are unit direction vectors
   const mag = Math.sqrt(dx*dx + dy*dy + dz*dz);
   dx /= mag; dy /= mag; dz /= mag;
 
+  // Apply horizontal stretching to scale the object wide (15% bigger than baseline)
+  dx *= 1.84;
+
   strings.push({
     dx, dy, dz,
-    length:   280 + rnd() * 390,   // 280 – 670 logical px  (ragged tips = fuzzy look)
-    t:        -(rnd() * 6.0),      // large stagger so load-in is gradual
-    speed:    75 + rnd() * 55,     // 75–130 logical px / s  (slow)
+    length:   210 + rnd() * 70,    // scaled up by 15% from original 180-240 baseline
+    t:        activeIndices.has(i) ? (rnd() * 0.8) : -(0.1 + rnd() * 3.0), // pre-load: exactly 8 sparks are already active
+    speed:    86 + rnd() * 63,     // speed adjusted proportionally to the 15% longer lengths to maintain timing consistency
     dotGlow:  0,
     deflX: 0, deflY: 0,
+    lastSurgeTime: -99999,         // track timestamps of recent surges (initialize to far past to avoid initial frame web connectors)
   });
 }
 
@@ -84,28 +98,45 @@ for (let i = 0; i < N; i++) {
 strings.sort((a, b) => b.dz - a.dz);   // back (high dz) drawn first
 
 // ── Cursor repulsion ──────────────────────────────────────────────────
-const REPEL_R   = 155;   // influence radius (logical px)
-const REPEL_MAX = 95;    // max tip deflection (logical px)
+const REPEL_R   = 95;    // influence radius (logical px, lessened from 155)
+const REPEL_MAX = 35;    // max tip deflection (logical px, lessened from 95)
 
 let mx = -9999, my = -9999;
+let bx = -9999, by = -9999;
+let lastBx = -9999, lastBy = -9999;
+let blobAlpha = 0;
+
 canvas.addEventListener('mousemove', e => {
   const r = canvas.getBoundingClientRect();
   mx = (e.clientX - r.left) / r.width  * VW;
   my = (e.clientY - r.top)  / r.height * VH;
+  if (bx < -9000) {
+    bx = mx;
+    by = my;
+    lastBx = mx;
+    lastBy = my;
+  }
 });
 canvas.addEventListener('mouseleave', () => { mx = -9999; my = -9999; });
 
 // ── Background gradient ───────────────────────────────────────────────
 function drawBg() {
-  const r = Math.max(VW, VH) * 1.15 * Math.min(sx, sy);
-  const g = ctx.createRadialGradient(FOCAL_SX*sx, FOCAL_SY*sy, 0,
-                                      FOCAL_SX*sx, FOCAL_SY*sy, r);
-  g.addColorStop(0.00, 'rgba(188,221,255,0.65)');
-  g.addColorStop(0.30, 'rgba(210,233,255,0.34)');
-  g.addColorStop(0.60, 'rgba(228,242,255,0.13)');
-  g.addColorStop(1.00, 'rgba(255,255,255,0.00)');
+  ctx.save();
+  ctx.translate(FOCAL_SX * sx, FOCAL_SY * sy);
+  // Scale canvas horizontally to make the gradient an ellipse matching the fanned shape
+  ctx.scale(1.8, 1.0);
+  const r = 680 * Math.min(sx, sy); // expanded further to fill the canvas beautifully
+  const g = ctx.createRadialGradient(0, 0, 0,
+                                      0, 0, r);
+  g.addColorStop(0.00, 'rgba(142,213,255,0.82)'); // more prominent
+  g.addColorStop(0.40, 'rgba(160,225,255,0.52)');
+  g.addColorStop(0.75, 'rgba(180,235,255,0.22)');
+  g.addColorStop(1.00, 'rgba(142,213,255,0.00)'); // fade out to transparent
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 // ── Render loop ───────────────────────────────────────────────────────
@@ -115,24 +146,90 @@ function frame(ts) {
   const dt = Math.min((ts - lastTs) / 1000, 0.05);
   lastTs = ts;
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawBg();
-
   const kRise = 1 - Math.pow(0.002, dt);
   const kFall = 1 - Math.pow(0.018, dt);
 
+  // ── Update blob tracking physics ────────────────────────────────────
+  if (mx > -9000) {
+    if (bx < -9000) {
+      bx = mx;
+      by = my;
+      lastBx = mx;
+      lastBy = my;
+    } else {
+      lastBx = bx;
+      lastBy = by;
+      const ease = 1 - Math.pow(0.002, dt); // smooth trailing lag
+      bx += (mx - bx) * ease;
+      by += (my - by) * ease;
+    }
+    const alphaEase = 1 - Math.pow(0.001, dt);
+    blobAlpha += (1 - blobAlpha) * alphaEase;
+  } else {
+    const alphaEase = 1 - Math.pow(0.015, dt);
+    blobAlpha += (0 - blobAlpha) * alphaEase;
+    if (blobAlpha < 0.01) {
+      bx = -9999;
+      by = -9999;
+    }
+  }
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawBg();
+
+  // (Cursor background radial gradient removed by user request)
+
+  // ── Physics updates: unbiased shuffled index loop to prevent activation bias ──
+  const indices = Array.from({ length: N }, (_, idx) => idx);
+  for (let i = indices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+
+  // Count current active sparks on screen (t > 0 && t < 1.22)
+  let activeCount = 0;
   strings.forEach(s => {
-    // Advance spark
-    s.t += (s.speed / s.length) * dt;
-    if (s.t > 1.55) {
-      s.t    = -(0.3 + rnd() * 5.0);
-      s.speed = 75 + rnd() * 55;
+    if (s.t > 0 && s.t < 1.22) {
+      activeCount++;
+    }
+  });
+
+  indices.forEach(idx => {
+    const s = strings[idx];
+    
+    // Spark throttling update
+    if (s.t < 0) {
+      const nextT = s.t + (s.speed / s.length) * dt;
+      if (nextT >= 0) {
+        if (activeCount < 8) {
+          s.t = nextT;
+          activeCount++;
+        } else {
+          s.t = 0; // Hold at 0 until an active slot opens
+        }
+      } else {
+        s.t = nextT;
+      }
+    } else if (s.t === 0) {
+      if (activeCount < 8) {
+        s.t = (s.speed / s.length) * dt;
+        activeCount++;
+      }
+    } else {
+      s.t += (s.speed / s.length) * dt;
+      if (s.t > 1.55) {
+        s.t = -(0.1 + rnd() * 1.5);
+        s.speed = 75 + rnd() * 55;
+      }
     }
 
-    // Projected tip (logical coords)
-    const tip = project(s.dx * s.length, s.dy * s.length, s.dz * s.length);
+    // Record surge time when spark is active/glowing
+    if (s.t > 0.85 && s.t < 1.22) {
+      s.lastSurgeTime = ts;
+    }
 
     // Cursor repulsion: smooth spring deflection
+    const tip = project(s.dx * s.length, s.dy * s.length, s.dz * s.length);
     const ddx   = tip.lx - mx;
     const ddy   = tip.ly - my;
     const dist2 = ddx * ddx + ddy * ddy;
@@ -148,21 +245,40 @@ function frame(ts) {
       : 1 - Math.pow(0.030, dt);  // slow return τ ≈ 600 ms
     s.deflX += (tgtDX - s.deflX) * kD;
     s.deflY += (tgtDY - s.deflY) * kD;
+  });
 
-    const tlx = tip.lx + s.deflX;
-    const tly = tip.ly + s.deflY;
+  // ── Drawing loop: depth sorted rendering ─────────────────────────────
+  strings.forEach((s, i) => {
+    // Projected tip (world coords projected to logical coords)
+    const tip = project(s.dx * s.length, s.dy * s.length, s.dz * s.length);
 
-    // Depth: dz ∈ [-1,1]; dz<0 = toward viewer (front), dz>0 = away (back)
+    // Depth calculation
     const depth     = (s.dz + 1) * 0.5;    // 0 = front, 1 = back
-    const baseAlpha = 0.22 - depth * 0.16;  // 0.22 → 0.06
-    const lineW     = 0.90 - depth * 0.50;  // 0.90 → 0.40
+    const baseAlpha = 0.32 - depth * 0.22;  // more prominent opacity (0.32 → 0.10)
+    const lineW     = 1.20 - depth * 0.60;  // more prominent line width (1.20 → 0.60, matching Design DNA base neutral)
 
-    // ── Base string ────────────────────────────────────────────────
+    // Breeze effect: gentle swaying of the tips
+    const phase = i * 0.18 + s.dz * 2.0;
+    const breezeX = Math.sin(ts * 0.0012 + phase) * 6.5 * (1 - depth * 0.4);
+    const breezeY = Math.cos(ts * 0.0008 + phase) * 3.0 * (1 - depth * 0.4);
+
+    const tlx = tip.lx + s.deflX + breezeX;
+    const tly = tip.ly + s.deflY + breezeY;
+
+    // ── Base string with core fade-out ─────────────────────────────
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(FOCAL_SX * sx, FOCAL_SY * sy);
     ctx.lineTo(tlx * sx, tly * sy);
-    ctx.strokeStyle = `rgba(16,120,243,${Math.max(0.03, baseAlpha).toFixed(3)})`;
+    
+    // Create gradient starting transparent at focal origin
+    const gLine = ctx.createLinearGradient(FOCAL_SX * sx, FOCAL_SY * sy, tlx * sx, tly * sy);
+    gLine.addColorStop(0, 'rgba(16,120,243,0)');
+    gLine.addColorStop(0.18, 'rgba(16,120,243,0)'); // transparent core buffer
+    gLine.addColorStop(0.40, `rgba(16,120,243,${(Math.max(0.03, baseAlpha) * 0.25).toFixed(3)})`);
+    gLine.addColorStop(1, `rgba(16,120,243,${Math.max(0.03, baseAlpha).toFixed(3)})`);
+    
+    ctx.strokeStyle = gLine;
     ctx.lineWidth   = Math.max(0.25, lineW);
     ctx.stroke();
     ctx.restore();
@@ -180,10 +296,10 @@ function frame(ts) {
       const hRaw = project(s.dx*s.length*tHead, s.dy*s.length*tHead, s.dz*s.length*tHead);
       const tRaw = project(s.dx*s.length*tTail, s.dy*s.length*tTail, s.dz*s.length*tTail);
 
-      const hLx = hRaw.lx + s.deflX * blend;
-      const hLy = hRaw.ly + s.deflY * blend;
-      const tLx = tRaw.lx + s.deflX * tailBl;
-      const tLy = tRaw.ly + s.deflY * tailBl;
+      const hLx = hRaw.lx + (s.deflX + breezeX) * blend;
+      const hLy = hRaw.ly + (s.deflY + breezeY) * blend;
+      const tLx = tRaw.lx + (s.deflX + breezeX) * tailBl;
+      const tLy = tRaw.ly + (s.deflY + breezeY) * tailBl;
 
       const ef = t < 0.08 ? t / 0.08 : 1;
       const sa = (1 - depth * 0.55) * ef;
@@ -204,21 +320,154 @@ function frame(ts) {
       ctx.restore();
     }
 
-    // ── Tip dot with glow ──────────────────────────────────────────
+    // ── Tip active tracking box (ACTUAL SQUARE) ───────────────────
     const glowTgt = (s.t > 0.85 && s.t < 1.22) ? 1 : 0;
     s.dotGlow += (glowTgt - s.dotGlow) * (glowTgt > s.dotGlow ? kRise : kFall);
     const dg   = s.dotGlow;
-    const dotR = (1.1 + dg * 2.4) * (1 - depth * 0.42) * Math.min(sx, sy);
 
-    if (dotR > 0.15) {
+    if (dg > 0.01) {
       ctx.save();
-      ctx.beginPath();
-      ctx.arc(tlx * sx, tly * sy, dotR, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(16,120,243,${Math.min(1, baseAlpha + dg * 0.58).toFixed(3)})`;
-      ctx.fill();
+      ctx.strokeStyle = `rgba(16, 120, 243, ${(0.65 * dg).toFixed(3)})`;
+      ctx.lineWidth = 0.85 * Math.min(sx, sy);
+      
+      const boxSize = 13 * (1 - depth * 0.45) * Math.min(sx, sy);
+      const bxL = tlx * sx - boxSize * 0.5;
+      const byT = tly * sy - boxSize * 0.5;
+      
+      ctx.strokeRect(bxL, byT, boxSize, boxSize);
       ctx.restore();
     }
   });
+
+  // ── Draw interactive mesh between nearest dot and recently surged dots ──
+  if (blobAlpha > 0.01 && mx > -9000) {
+    // 1. Find the dot closest to the cursor
+    let closestDot = null;
+    let minD = Infinity;
+    strings.forEach(s => {
+      const tip = project(s.dx * s.length, s.dy * s.length, s.dz * s.length);
+      const phase = strings.indexOf(s) * 0.18 + s.dz * 2.0;
+      const depth = (s.dz + 1) * 0.5;
+      const breezeX = Math.sin(ts * 0.0012 + phase) * 6.5 * (1 - depth * 0.4);
+      const breezeY = Math.cos(ts * 0.0008 + phase) * 3.0 * (1 - depth * 0.4);
+      const tlx = tip.lx + s.deflX + breezeX;
+      const tly = tip.ly + s.deflY + breezeY;
+
+      const dx = tlx - mx;
+      const dy = tly - my;
+      const d = Math.hypot(dx, dy);
+      if (d < minD) {
+        minD = d;
+        closestDot = { s, x: tlx, y: tly };
+      }
+    });
+
+    if (closestDot && minD < 300) {
+      // 2. Find all dots that surged recently (past 4 seconds) and are within range
+      const recentDots = [];
+      strings.forEach(s => {
+        if (s === closestDot.s) return;
+        const timeSinceSurge = ts - (s.lastSurgeTime || 0);
+        if (timeSinceSurge < 4000) {
+          const tip = project(s.dx * s.length, s.dy * s.length, s.dz * s.length);
+          const phase = strings.indexOf(s) * 0.18 + s.dz * 2.0;
+          const depth = (s.dz + 1) * 0.5;
+          const breezeX = Math.sin(ts * 0.0012 + phase) * 6.5 * (1 - depth * 0.4);
+          const breezeY = Math.cos(ts * 0.0008 + phase) * 3.0 * (1 - depth * 0.4);
+          const tlx = tip.lx + s.deflX + breezeX;
+          const tly = tip.ly + s.deflY + breezeY;
+
+          const distToClosest = Math.hypot(tlx - closestDot.x, tly - closestDot.y);
+          if (distToClosest < 280) {
+            recentDots.push({ s, x: tlx, y: tly, age: timeSinceSurge / 4000, dist: distToClosest });
+          }
+        }
+      });
+
+      // 3. Draw lines from closestDot to recently surged dots, and between them to form a mesh
+      ctx.save();
+      recentDots.forEach(rd => {
+        const fade = (1 - rd.age) * (1 - rd.dist / 280) * blobAlpha;
+        if (fade > 0.01) {
+          ctx.beginPath();
+          ctx.moveTo(closestDot.x * sx, closestDot.y * sy);
+          ctx.lineTo(rd.x * sx, rd.y * sy);
+          ctx.strokeStyle = `rgba(16, 120, 243, ${(0.35 * fade).toFixed(3)})`;
+          ctx.lineWidth = 0.8 * Math.min(sx, sy);
+          ctx.stroke();
+        }
+
+        recentDots.forEach(other => {
+          if (rd === other) return;
+          const dBetween = Math.hypot(rd.x - other.x, rd.y - other.y);
+          if (dBetween < 130) {
+            const meshFade = (1 - Math.max(rd.age, other.age)) * (1 - dBetween / 130) * blobAlpha;
+            if (meshFade > 0.01) {
+              ctx.beginPath();
+              ctx.moveTo(rd.x * sx, rd.y * sy);
+              ctx.lineTo(other.x * sx, other.y * sy);
+              ctx.strokeStyle = `rgba(16, 120, 243, ${(0.18 * meshFade).toFixed(3)})`;
+              ctx.lineWidth = 0.5 * Math.min(sx, sy);
+              ctx.stroke();
+            }
+          }
+        });
+      });
+      ctx.restore();
+    }
+  }
+
+  // ── HUD Overlay (Blob tracking brackets & data) ─────────────────────
+  if (blobAlpha > 0.01 && bx > -9000) {
+    ctx.save();
+    ctx.strokeStyle = `rgba(16,120,243,${0.35 * blobAlpha})`;
+    ctx.lineWidth = 0.8 * Math.min(sx, sy);
+    
+    const boxSize = 50 * Math.min(sx, sy); // smaller compact cursor frame size
+    const screenBx = bx * sx;
+    const screenBy = by * sy;
+
+    // Corner brackets lengths
+    const len = 12 * Math.min(sx, sy);
+    
+    // Top-left corner
+    ctx.beginPath();
+    ctx.moveTo(screenBx - boxSize, screenBy - boxSize + len);
+    ctx.lineTo(screenBx - boxSize, screenBy - boxSize);
+    ctx.lineTo(screenBx - boxSize + len, screenBy - boxSize);
+    ctx.stroke();
+
+    // Top-right corner
+    ctx.beginPath();
+    ctx.moveTo(screenBx + boxSize, screenBy - boxSize + len);
+    ctx.lineTo(screenBx + boxSize, screenBy - boxSize);
+    ctx.lineTo(screenBx + boxSize - len, screenBy - boxSize);
+    ctx.stroke();
+
+    // Bottom-left corner
+    ctx.beginPath();
+    ctx.moveTo(screenBx - boxSize, screenBy + boxSize - len);
+    ctx.lineTo(screenBx - boxSize, screenBy + boxSize);
+    ctx.lineTo(screenBx - boxSize + len, screenBy + boxSize);
+    ctx.stroke();
+
+    // Bottom-right corner
+    ctx.beginPath();
+    ctx.moveTo(screenBx + boxSize, screenBy + boxSize - len);
+    ctx.lineTo(screenBx + boxSize, screenBy + boxSize);
+    ctx.lineTo(screenBx + boxSize - len, screenBy + boxSize);
+    ctx.stroke();
+
+    // Dynamic Tracking Label - Related to Varmeta Blockchain and AI
+    ctx.fillStyle = `rgba(16,120,243,${0.65 * blobAlpha})`;
+    ctx.font = `${Math.round(8 * Math.min(sx, sy))}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(`VARMETA_CORE_AI_ACTIVE`, screenBx, screenBy - boxSize - 8);
+    
+    // Status display - Related to Varmeta Blockchain and AI
+    ctx.fillText(`BLOCK: #83209 | TPS: 1,420 | AGENT: ENGAGED`, screenBx, screenBy + boxSize + 15);
+    ctx.restore();
+  }
 
   requestAnimationFrame(frame);
 }

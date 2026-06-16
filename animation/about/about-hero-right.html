@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>About — Hero (Floating Ball)</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; overflow:hidden; background:transparent; }
+    #glc { position:absolute; inset:0; width:100%; height:100%; display:block; }
+    #ov  { position:absolute; inset:0; width:100%; height:100%; display:block; pointer-events:none; }
+  </style>
+</head>
+<body>
+<canvas id="glc"></canvas>
+<canvas id="ov"></canvas>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+const VW = 1440, VH = 560;
+
+// ── Renderer ──────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('glc'), antialias: true, alpha: true });
+renderer.setClearColor(0x000000, 0);
+
+// ── Camera — 1 world-unit = 1 screen-px at z=0 ───────────────────────
+const CAM_Z = 1000;
+const camera = new THREE.PerspectiveCamera(
+  2 * Math.atan(VH * 0.5 / CAM_Z) * (180 / Math.PI),
+  VW / VH, 1, 10000
+);
+camera.position.set(0, 0, CAM_Z);
+
+const scene = new THREE.Scene();
+
+// ── 2D overlay ────────────────────────────────────────────────────────
+const ov  = document.getElementById('ov');
+const ctx = ov.getContext('2d');
+let sx = 1, sy = 1;
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  ov.width  = Math.round(w * devicePixelRatio);
+  ov.height = Math.round(h * devicePixelRatio);
+  sx = ov.width / VW;  sy = ov.height / VH;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Fast screen projection via cached PVM matrix ──────────────────────
+// Avoids per-call THREE.Vector3 allocation and double matrix-multiply.
+const PVM  = new THREE.Matrix4();
+let pvmE   = PVM.elements;
+let _lx = 0, _ly = 0;   // output of project()
+
+function updatePVM() {
+  camera.updateMatrixWorld();
+  PVM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  pvmE = PVM.elements;
+}
+
+function project(wx, wy, wz) {
+  const e = pvmE;
+  const iw = 1 / (e[3]*wx + e[7]*wy + e[11]*wz + e[15]);
+  _lx = ((e[0]*wx + e[4]*wy + e[8] *wz + e[12]) * iw *  0.5 + 0.5) * VW;
+  _ly = ((e[1]*wx + e[5]*wy + e[9] *wz + e[13]) * iw * -0.5 + 0.5) * VH;
+}
+
+// ── Seeded RNG ────────────────────────────────────────────────────────
+let seed = 83421;
+function rnd() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
+
+// ── Build strings ─────────────────────────────────────────────────────
+// Ball centered at origin (projects to screen center).
+// ox/oy/oz = unit sphere direction (stored permanently for rotation).
+// dx/dy/dz = rotated direction (updated each frame).
+const N = 200;
+const activeIndices = new Set();
+while (activeIndices.size < 8) activeIndices.add(Math.floor(rnd() * N));
+
+const strings = [];
+for (let i = 0; i < N; i++) {
+  // Uniform sphere distribution (equal solid-angle density, no pole clumping)
+  const u     = rnd();
+  const v     = rnd();
+  const phi   = Math.acos(1 - 2 * u);          // polar, 0 = toward camera
+  const theta = v * Math.PI * 2;               // azimuth, full circle
+
+  const ox = Math.sin(phi) * Math.cos(theta);
+  const oy = Math.sin(phi) * Math.sin(theta);
+  const oz = Math.cos(phi);                     // +1 toward camera, -1 away
+
+  strings.push({
+    ox, oy, oz,       // fixed unit direction on sphere
+    dx: ox, dy: oy, dz: oz,   // current rotated direction (same at t=0)
+    length: 180 + rnd() * 60,  // ball radius fuzzy range 180–240 units
+    t:     activeIndices.has(i) ? rnd() * 0.8 : -(0.1 + rnd() * 3.0),
+    speed: 90 + rnd() * 65,
+    dotGlow: 0,
+    deflX: 0, deflY: 0,
+    lastSurgeTime: -99999,
+    tipLx: 0, tipLy: 0,
+  });
+}
+
+// ── ShaderMaterial — per-vertex alpha, uniform color ──────────────────
+const strMat = new THREE.ShaderMaterial({
+  vertexShader: `
+    attribute float aAlpha;
+    varying float vAlpha;
+    void main() {
+      vAlpha = aAlpha;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: `
+    uniform vec3 uColor;
+    varying float vAlpha;
+    void main() { gl_FragColor = vec4(uColor, vAlpha); }`,
+  uniforms: { uColor: { value: new THREE.Color(0x1078f3) } },
+  transparent: true, depthTest: false, depthWrite: false,
+});
+
+// ── ShaderMaterial — per-vertex color + alpha (sparks) ────────────────
+const spkMat = new THREE.ShaderMaterial({
+  vertexShader: `
+    attribute float aAlpha;
+    attribute vec3  aColor;
+    varying float vAlpha;
+    varying vec3  vColor;
+    void main() {
+      vAlpha = aAlpha; vColor = aColor;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: `
+    varying float vAlpha; varying vec3 vColor;
+    void main() { gl_FragColor = vec4(vColor, vAlpha); }`,
+  transparent: true, depthTest: false, depthWrite: false,
+});
+
+// ── Geometry buffers — 2 verts per string (origin → tip) ─────────────
+// Simpler than multi-stop; alpha linearly fades from 0 (root) to baseAlpha (tip).
+const strPos   = new Float32Array(N * 2 * 3);
+const strAlpha = new Float32Array(N * 2);
+const spkPos   = new Float32Array(N * 2 * 3);
+const spkAlpha = new Float32Array(N * 2);
+const spkColor = new Float32Array(N * 2 * 3);
+
+// Static spark colors: tail = #1078f3, head = #8ed5ff
+for (let i = 0; i < N; i++) {
+  const ti = i * 6, hi = ti + 3;
+  spkColor[ti]   = 16/255;  spkColor[ti+1] = 120/255; spkColor[ti+2] = 243/255;
+  spkColor[hi]   = 142/255; spkColor[hi+1] = 213/255; spkColor[hi+2] = 255/255;
+}
+
+function makeGeo(pos, alpha, extraAttrs) {
+  const geo  = new THREE.BufferGeometry();
+  const pA   = new THREE.BufferAttribute(pos,   3); pA.setUsage(THREE.DynamicDrawUsage);
+  const aA   = new THREE.BufferAttribute(alpha, 1); aA.setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('position', pA);
+  geo.setAttribute('aAlpha',   aA);
+  if (extraAttrs) extraAttrs(geo);
+  return { geo, pA, aA };
+}
+
+const str = makeGeo(strPos, strAlpha);
+const spk = makeGeo(spkPos, spkAlpha, geo => {
+  geo.setAttribute('aColor', new THREE.BufferAttribute(spkColor, 3));
+});
+
+scene.add(new THREE.LineSegments(str.geo, strMat));
+scene.add(new THREE.LineSegments(spk.geo, spkMat));
+
+// ── Interaction ───────────────────────────────────────────────────────
+const REPEL_R   = 95;
+const REPEL_MAX = 35;
+let mx = -9999, my = -9999;
+let bx = -9999, by = -9999;
+let blobAlpha = 0;
+let camX = 0, camY = 0, targetCamX = 0, targetCamY = 0;
+
+const glc = document.getElementById('glc');
+glc.addEventListener('mousemove', e => {
+  const r = glc.getBoundingClientRect();
+  mx = (e.clientX - r.left) / r.width  * VW;
+  my = (e.clientY - r.top)  / r.height * VH;
+  if (bx < -9000) { bx = mx; by = my; }
+  targetCamX = (e.clientX / window.innerWidth  - 0.5) * 80;
+  targetCamY = -(e.clientY / window.innerHeight - 0.5) * 50;
+});
+glc.addEventListener('mouseleave', () => {
+  mx = -9999; my = -9999; targetCamX = 0; targetCamY = 0;
+});
+
+// ── Pre-allocated shuffle array ───────────────────────────────────────
+const shuffleIdx = Array.from({ length: N }, (_, i) => i);
+
+// ── Render loop ───────────────────────────────────────────────────────
+let lastTs = 0;
+let rotAngle = 0;
+const SPIN_RATE = 0.0025; // rad/s
+
+function frame(ts) {
+  const dt = Math.min((ts - lastTs) / 1000, 0.05);
+  lastTs = ts;
+
+  const kRise = 1 - Math.pow(0.002, dt);
+  const kFall = 1 - Math.pow(0.018, dt);
+
+  // Parallax (translate only, no tilt)
+  camX += (targetCamX - camX) * 0.05;
+  camY += (targetCamY - camY) * 0.05;
+  camera.position.set(camX, camY, CAM_Z);
+  updatePVM();
+
+  // Auto-rotate ball (Y axis)
+  rotAngle += SPIN_RATE * dt;
+  const cosA = Math.cos(rotAngle), sinA = Math.sin(rotAngle);
+
+  // Apply rotation + compute depth for each string
+  for (let i = 0; i < N; i++) {
+    const s = strings[i];
+    // Y-axis rotation: x' = cos*ox + sin*oz, y'=oy, z' = -sin*ox + cos*oz
+    s.dx = cosA * s.ox + sinA * s.oz;
+    s.dy = s.oy;
+    s.dz = -sinA * s.ox + cosA * s.oz;
+  }
+
+  // Blob tracker
+  if (mx > -9000) {
+    if (bx < -9000) { bx = mx; by = my; }
+    else { const e2 = 1 - Math.pow(0.002, dt); bx += (mx - bx) * e2; by += (my - by) * e2; }
+    blobAlpha += (1 - blobAlpha) * (1 - Math.pow(0.001, dt));
+  } else {
+    blobAlpha += (0 - blobAlpha) * (1 - Math.pow(0.015, dt));
+    if (blobAlpha < 0.01) { bx = -9999; by = -9999; }
+  }
+
+  // Shuffle update order (reuse pre-allocated array, no GC)
+  for (let i = N - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    const tmp = shuffleIdx[i]; shuffleIdx[i] = shuffleIdx[j]; shuffleIdx[j] = tmp;
+  }
+
+  let activeCount = 0;
+  for (let i = 0; i < N; i++) { const s = strings[i]; if (s.t > 0 && s.t < 1.22) activeCount++; }
+
+  for (let si = 0; si < N; si++) {
+    const i = shuffleIdx[si];
+    const s = strings[i];
+
+    // Spark travel
+    if (s.t < 0) {
+      const nxt = s.t + (s.speed / s.length) * dt;
+      if (nxt >= 0) { if (activeCount < 8) { s.t = nxt; activeCount++; } else s.t = 0; }
+      else s.t = nxt;
+    } else if (s.t === 0) {
+      if (activeCount < 8) { s.t = (s.speed / s.length) * dt; activeCount++; }
+    } else {
+      s.t += (s.speed / s.length) * dt;
+      if (s.t > 1.55) { s.t = -(0.1 + rnd() * 1.5); s.speed = 75 + rnd() * 55; }
+    }
+    if (s.t > 0.85 && s.t < 1.22) s.lastSurgeTime = ts;
+
+    // Breeze
+    const ph = i * 0.18 + s.dz * 2.0;
+    const bX = Math.sin(ts * 0.0012 + ph) * 4.5;
+    const bY = Math.cos(ts * 0.0008 + ph) * 2.5;
+    const bZ = Math.sin(ts * 0.0010 + ph) * 3.0;
+
+    // Undeflected tip
+    const tipWX = s.dx * s.length + bX;
+    const tipWY = s.dy * s.length + bY;
+    const tipWZ = s.dz * s.length + bZ;
+
+    // Project tip for repulsion
+    project(tipWX, tipWY, tipWZ);
+    const tlx = _lx, tly = _ly;
+
+    // 2D repulsion
+    const ddx = tlx - mx, ddy = tly - my;
+    const dist2 = ddx * ddx + ddy * ddy;
+    let tgtDX = 0, tgtDY = 0;
+    if (dist2 < REPEL_R * REPEL_R && dist2 > 0.01) {
+      const dist = Math.sqrt(dist2);
+      const push = Math.pow(1 - dist / REPEL_R, 2) * REPEL_MAX;
+      tgtDX = ddx / dist * push;  tgtDY = ddy / dist * push;
+    }
+    const kD = dist2 < REPEL_R * REPEL_R ? (1 - Math.pow(0.004, dt)) : (1 - Math.pow(0.030, dt));
+    s.deflX += (tgtDX - s.deflX) * kD;
+    s.deflY += (tgtDY - s.deflY) * kD;
+
+    // Unproject 2D deflection → world XY at tipWZ depth
+    const camDist = CAM_Z - tipWZ;
+    const d3X =  s.deflX * camDist / CAM_Z;
+    const d3Y = -s.deflY * camDist / CAM_Z;
+
+    // Final deflected tip
+    const fTX = tipWX + d3X, fTY = tipWY + d3Y, fTZ = tipWZ;
+    project(fTX, fTY, fTZ);
+    s.tipLx = _lx;  s.tipLy = _ly;
+
+    // Store for geometry fill (used in depth-sorted pass below)
+    s._fTX = fTX; s._fTY = fTY; s._fTZ = fTZ;
+    s._bX = bX; s._bY = bY; s._bZ = bZ;
+    s._d3X = d3X; s._d3Y = d3Y;
+
+    // Glow
+    const glowTgt = (s.t > 0.85 && s.t < 1.22) ? 1 : 0;
+    s.dotGlow += (glowTgt - s.dotGlow) * (glowTgt > s.dotGlow ? kRise : kFall);
+  }
+
+  // Depth sort back-to-front so front strings composite on top
+  strings.sort((a, b) => a.dz - b.dz);
+
+  // Fill geometry in depth-sorted order
+  for (let i = 0; i < N; i++) {
+    const s = strings[i];
+    // depth: 0 = fully toward camera (bright), 1 = away (dim)
+    const depth     = (-s.dz + 1) * 0.5;
+    const baseAlpha = 0.28 - depth * 0.20;
+
+    const fullDX = s.dx * s.length + s._bX + s._d3X;
+    const fullDY = s.dy * s.length + s._bY + s._d3Y;
+    const fullDZ = s.dz * s.length + s._bZ;
+
+    // Base string: 2 verts — origin (alpha=0) and tip (alpha=baseAlpha)
+    const vi = i * 6;
+    strPos[vi]   = 0; strPos[vi+1] = 0; strPos[vi+2] = 0;
+    strPos[vi+3] = fullDX; strPos[vi+4] = fullDY; strPos[vi+5] = fullDZ;
+    strAlpha[i*2] = 0;  strAlpha[i*2+1] = Math.max(0.03, baseAlpha);
+
+    // Spark
+    const t = s.t;
+    const qi = i * 6;
+    if (t > 0 && t < 1.22) {
+      const tHead = Math.min(1, t);
+      const tTail = Math.max(0, t - 0.30);
+      const ef    = t < 0.08 ? t / 0.08 : 1;
+      const sa    = (1 - depth * 0.55) * ef;
+
+      spkPos[qi]   = fullDX * tTail; spkPos[qi+1] = fullDY * tTail; spkPos[qi+2] = fullDZ * tTail;
+      spkPos[qi+3] = fullDX * tHead; spkPos[qi+4] = fullDY * tHead; spkPos[qi+5] = fullDZ * tHead;
+      spkAlpha[i*2] = 0;  spkAlpha[i*2+1] = 0.85 * sa;
+    } else {
+      spkPos[qi]=0; spkPos[qi+1]=0; spkPos[qi+2]=0;
+      spkPos[qi+3]=0; spkPos[qi+4]=0; spkPos[qi+5]=0;
+      spkAlpha[i*2] = 0;  spkAlpha[i*2+1] = 0;
+    }
+  }
+
+  str.pA.needsUpdate = true;  str.aA.needsUpdate = true;
+  spk.pA.needsUpdate = true;  spk.aA.needsUpdate = true;
+
+  renderer.render(scene, camera);
+
+  // ── 2D overlay ────────────────────────────────────────────────────────
+  ctx.clearRect(0, 0, ov.width, ov.height);
+
+  // Radial background glow centered on ball
+  project(0, 0, 0);
+  const cx0 = _lx * sx, cy0 = _ly * sy;
+  ctx.save();
+  ctx.translate(cx0, cy0);
+  const bgR = 580 * Math.min(sx, sy);
+  const bgG = ctx.createRadialGradient(0, 0, 0, 0, 0, bgR);
+  bgG.addColorStop(0.00, 'rgba(142,213,255,0.70)');
+  bgG.addColorStop(0.35, 'rgba(160,225,255,0.40)');
+  bgG.addColorStop(0.70, 'rgba(180,235,255,0.15)');
+  bgG.addColorStop(1.00, 'rgba(142,213,255,0.00)');
+  ctx.fillStyle = bgG;
+  ctx.beginPath(); ctx.arc(0, 0, bgR, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  // Glow boxes at active tips
+  for (let i = 0; i < N; i++) {
+    const s = strings[i];
+    if (s.dotGlow < 0.01) continue;
+    const depth = (-s.dz + 1) * 0.5;
+    const bs    = 11 * (1 - depth * 0.45) * Math.min(sx, sy);
+    ctx.save();
+    ctx.strokeStyle = `rgba(16,120,243,${(0.60 * s.dotGlow).toFixed(3)})`;
+    ctx.lineWidth   = 0.8 * Math.min(sx, sy);
+    ctx.strokeRect(s.tipLx * sx - bs * 0.5, s.tipLy * sy - bs * 0.5, bs, bs);
+    ctx.restore();
+  }
+
+  // Mesh: closest dot → up to 10 most recent surges (no mesh-to-mesh, O(N) only)
+  if (blobAlpha > 0.01 && mx > -9000) {
+    let closest = null, minD = Infinity;
+    for (let i = 0; i < N; i++) {
+      const s = strings[i];
+      const d = Math.hypot(s.tipLx - mx, s.tipLy - my);
+      if (d < minD) { minD = d; closest = s; }
+    }
+
+    if (closest && minD < 300) {
+      const recent = [];
+      for (let i = 0; i < N; i++) {
+        const s = strings[i];
+        if (s === closest) continue;
+        const age  = ts - (s.lastSurgeTime || 0);
+        const dist = Math.hypot(s.tipLx - closest.tipLx, s.tipLy - closest.tipLy);
+        if (age < 4000 && dist < 260)
+          recent.push({ s, age: age / 4000, dist });
+      }
+      // Cap at 10 to stay O(N) total
+      recent.sort((a, b) => a.age - b.age);
+      if (recent.length > 10) recent.length = 10;
+
+      ctx.save();
+      for (let i = 0; i < recent.length; i++) {
+        const rd   = recent[i];
+        const fade = (1 - rd.age) * (1 - rd.dist / 260) * blobAlpha;
+        if (fade > 0.01) {
+          ctx.beginPath();
+          ctx.moveTo(closest.tipLx * sx, closest.tipLy * sy);
+          ctx.lineTo(rd.s.tipLx  * sx,  rd.s.tipLy  * sy);
+          ctx.strokeStyle = `rgba(16,120,243,${(0.35 * fade).toFixed(3)})`;
+          ctx.lineWidth   = 0.8 * Math.min(sx, sy);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+  }
+
+  // HUD tracking brackets
+  if (blobAlpha > 0.01 && bx > -9000) {
+    const bs  = 50 * Math.min(sx, sy);
+    const sbx = bx * sx, sby = by * sy;
+    const len = 12 * Math.min(sx, sy);
+    ctx.save();
+    ctx.strokeStyle = `rgba(16,120,243,${(0.35 * blobAlpha).toFixed(3)})`;
+    ctx.lineWidth   = 0.8 * Math.min(sx, sy);
+    [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([cx, cy]) => {
+      ctx.beginPath();
+      ctx.moveTo(sbx + cx*bs, sby + cy*bs - cy*len);
+      ctx.lineTo(sbx + cx*bs, sby + cy*bs);
+      ctx.lineTo(sbx + cx*bs - cx*len, sby + cy*bs);
+      ctx.stroke();
+    });
+    ctx.fillStyle = `rgba(16,120,243,${(0.65 * blobAlpha).toFixed(3)})`;
+    ctx.font      = `${Math.round(8 * Math.min(sx, sy))}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText('VARMETA_CORE_AI_ACTIVE', sbx, sby - bs - 8);
+    ctx.fillText('BLOCK: #83209 | TPS: 1,420 | AGENT: ENGAGED', sbx, sby + bs + 15);
+    ctx.restore();
+  }
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

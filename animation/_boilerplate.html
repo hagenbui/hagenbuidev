@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>_Boilerplate — Three.js r128 + 2D overlay</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; overflow:hidden; background:transparent; }
+    /* glc sits behind ov; ov is transparent except what 2D ctx draws */
+    #glc { position:absolute; inset:0; width:100%; height:100%; display:block; }
+    #ov  { position:absolute; inset:0; width:100%; height:100%; display:block; pointer-events:none; }
+  </style>
+</head>
+<body>
+<canvas id="glc"></canvas>   <!-- WebGL (Three.js) -->
+<canvas id="ov"></canvas>    <!-- 2D overlay: gradients, HUD, text, anything needing variable line width -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+// ── Virtual design space (logical pixels) ─────────────────────────────
+// All world / overlay coordinates are expressed in these units.
+const VW = 1440, VH = 560;
+
+// ── Three.js renderer ─────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({
+  canvas: document.getElementById('glc'),
+  antialias: true,
+  alpha: true,          // transparent background so body/parent shows through
+});
+renderer.setClearColor(0x000000, 0);
+
+// ── Camera — 1 world-unit = 1 screen-pixel at z = 0 ──────────────────
+// Set vertical FOV so the frustum height at z=0 exactly equals VH.
+const CAM_Z = 1000;
+const camera = new THREE.PerspectiveCamera(
+  2 * Math.atan(VH * 0.5 / CAM_Z) * (180 / Math.PI),  // vFOV ≈ 31.3°
+  VW / VH,   // aspect — updated on resize
+  1, 10000
+);
+camera.position.set(0, 0, CAM_Z);
+// camera looks down –Z; do NOT call lookAt() after translating for parallax or it will rotate.
+
+// ── Scene ─────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+
+// ── 2D overlay ────────────────────────────────────────────────────────
+const ov  = document.getElementById('ov');
+const ctx = ov.getContext('2d');
+let sx = 1, sy = 1;   // overlay physical pixels per VW/VH unit (set by resize)
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  ov.width  = Math.round(w * devicePixelRatio);
+  ov.height = Math.round(h * devicePixelRatio);
+  sx = ov.width  / VW;
+  sy = ov.height / VH;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Project world coords → overlay logical pixels ─────────────────────
+// Usage: const {lx, ly} = w2o(worldX, worldY, worldZ);
+//        then draw at (lx * sx, ly * sy) on the overlay canvas.
+const _v = new THREE.Vector3();
+function w2o(wx, wy, wz) {
+  _v.set(wx, wy, wz).project(camera);   // → NDC [-1, 1]
+  return {
+    lx: (_v.x *  0.5 + 0.5) * VW,
+    ly: (-_v.y * 0.5 + 0.5) * VH,
+  };
+}
+
+// ── Animation loop ────────────────────────────────────────────────────
+let lastTs = 0;
+
+function frame(ts) {
+  const dt = Math.min((ts - lastTs) / 1000, 0.05);
+  lastTs = ts;
+
+  // --- update scene objects ---
+
+  renderer.render(scene, camera);
+
+  // --- overlay draw ---
+  ctx.clearRect(0, 0, ov.width, ov.height);
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
