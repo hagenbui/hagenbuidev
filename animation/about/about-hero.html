@@ -30,52 +30,64 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// ── Sphere geometry ───────────────────────────────────────────────────
-// Center projected to screen-centre; strings radiate outward in full 3-D.
-const CX     = VW / 2;    // 600  — sphere centre x (logical)
-const CY     = VH / 2;    // 280  — sphere centre y (logical)
-const RADIUS = 260;        // sphere radius (logical px)
-const CAM_Z  = 1400;       // perspective focal length
+// ── Burst origin: bottom-right corner ────────────────────────────────
+const FOCAL_SX = VW;
+const FOCAL_SY = VH;
+const CAM_Z    = 1400;   // perspective focal length
 
 function project(x, y, z) {
   const w = CAM_Z / (CAM_Z + z);
-  return { lx: x * w + CX, ly: -y * w + CY };
+  return { lx: x * w + FOCAL_SX, ly: -y * w + FOCAL_SY };
 }
 
 // ── Seeded RNG ────────────────────────────────────────────────────────
-let seed = 42317;
+let seed = 83421;
 function rnd() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
 
-// ── Build full-sphere strings via Fibonacci sampling ──────────────────
-// cosT spans 1 → -1 so every direction is covered (not just upper hemisphere).
-const N = 120;
+// ── Build strings ─────────────────────────────────────────────────────
+// In world coords (y-up):
+//   angle = π/2  →  dx=0, dy=1  → tip at top-right  (right edge)
+//   angle = 3π/4 →  dx=-0.707, dy=0.707  → diagonal upper-left
+//   angle = π    →  dx=-1, dy=0  → tip at bottom-left  (bottom edge)
+// Strings fan across this quarter-circle, all pointing into the canvas.
+const N         = 240;
+const ANGLE_MIN = Math.PI * 0.50;   // up  (right edge)
+const ANGLE_MAX = Math.PI * 1.00;   // left (bottom edge)
+const Z_SPREAD  = 0.44;             // depth variation  →  3-D sphere feel
+
 const strings = [];
 for (let i = 0; i < N; i++) {
-  const cosT = 1 - (2 * i + 1) / N;
-  const sinT = Math.sqrt(1 - cosT * cosT);
-  const phi  = i * 2.399963;
+  const frac    = i / (N - 1);
+  const jitter  = (rnd() - 0.5) * 0.055;   // per-string angular jitter → fuzziness
+  const angle2d = ANGLE_MIN + frac * (ANGLE_MAX - ANGLE_MIN) + jitter;
+
+  // 2-D base direction + random z offset
+  let dx = Math.cos(angle2d);
+  let dy = Math.sin(angle2d);
+  let dz = (rnd() * 2 - 1) * Z_SPREAD;
+
+  // Normalise so all strings are unit direction vectors
+  const mag = Math.sqrt(dx*dx + dy*dy + dz*dz);
+  dx /= mag; dy /= mag; dz /= mag;
 
   strings.push({
-    dx: sinT * Math.cos(phi),
-    dy: cosT,
-    dz: sinT * Math.sin(phi),
-    t:       -(rnd() * 5.0),
-    speed:    78 + rnd() * 52,   // 78–130 logical px / s  (slow)
+    dx, dy, dz,
+    length:   280 + rnd() * 390,   // 280 – 670 logical px  (ragged tips = fuzzy look)
+    t:        -(rnd() * 6.0),      // large stagger so load-in is gradual
+    speed:    75 + rnd() * 55,     // 75–130 logical px / s  (slow)
     dotGlow:  0,
-    deflX: 0, deflY: 0,          // current tip deflection (smooth)
-    _rdx: 0, _rdy: 0, _rdz: 0,
+    deflX: 0, deflY: 0,
   });
 }
 
-// ── Auto-rotation (Y axis only — cursor does NOT rotate) ──────────────
-let spinY = 0;
-const SPIN_RATE = 0.10;   // rad / s  (~63 s per full revolution)
+// Depth sort once (no rotation → order never changes)
+strings.sort((a, b) => b.dz - a.dz);   // back (high dz) drawn first
 
 // ── Cursor repulsion ──────────────────────────────────────────────────
-const REPEL_R   = 145;   // influence radius (logical px)
-const REPEL_MAX = 90;    // max deflection at cursor centre (logical px)
+const REPEL_R   = 155;   // influence radius (logical px)
+const REPEL_MAX = 95;    // max tip deflection (logical px)
 
-let mx = -9999, my = -9999;  // start off-canvas so nothing deflects on load
+let mx = -9999, my = -9999;
 canvas.addEventListener('mousemove', e => {
   const r = canvas.getBoundingClientRect();
   mx = (e.clientX - r.left) / r.width  * VW;
@@ -83,13 +95,14 @@ canvas.addEventListener('mousemove', e => {
 });
 canvas.addEventListener('mouseleave', () => { mx = -9999; my = -9999; });
 
-// ── Background ────────────────────────────────────────────────────────
+// ── Background gradient ───────────────────────────────────────────────
 function drawBg() {
-  const R = Math.max(VW, VH) * 0.82 * Math.min(sx, sy);
-  const g = ctx.createRadialGradient(CX*sx, CY*sy, 0, CX*sx, CY*sy, R);
-  g.addColorStop(0.00, 'rgba(188,221,255,0.52)');
-  g.addColorStop(0.42, 'rgba(210,233,255,0.26)');
-  g.addColorStop(0.75, 'rgba(228,242,255,0.10)');
+  const r = Math.max(VW, VH) * 1.15 * Math.min(sx, sy);
+  const g = ctx.createRadialGradient(FOCAL_SX*sx, FOCAL_SY*sy, 0,
+                                      FOCAL_SX*sx, FOCAL_SY*sy, r);
+  g.addColorStop(0.00, 'rgba(188,221,255,0.65)');
+  g.addColorStop(0.30, 'rgba(210,233,255,0.34)');
+  g.addColorStop(0.60, 'rgba(228,242,255,0.13)');
   g.addColorStop(1.00, 'rgba(255,255,255,0.00)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -102,25 +115,6 @@ function frame(ts) {
   const dt = Math.min((ts - lastTs) / 1000, 0.05);
   lastTs = ts;
 
-  // Auto-spin Y + slow nodding tilt on X (makes the sphere feel alive)
-  spinY += SPIN_RATE * dt;
-  const tiltX = Math.sin(ts * 0.00016) * 0.12;
-
-  const cosY = Math.cos(spinY), sinY = Math.sin(spinY);
-  const cosX = Math.cos(tiltX), sinX = Math.sin(tiltX);
-
-  // Rotate all string directions
-  strings.forEach(s => {
-    const rx =  s.dx * cosY - s.dz * sinY;
-    const rz0 = s.dx * sinY + s.dz * cosY;
-    const ry  =  s.dy * cosX + rz0 * sinX;
-    const rz  = -s.dy * sinX + rz0 * cosX;
-    s._rdx = rx; s._rdy = ry; s._rdz = rz;
-  });
-
-  // Painter's sort: back (high rdz) drawn before front (low rdz)
-  strings.sort((a, b) => b._rdz - a._rdz);
-
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawBg();
 
@@ -129,51 +123,46 @@ function frame(ts) {
 
   strings.forEach(s => {
     // Advance spark
-    s.t += (s.speed / RADIUS) * dt;
+    s.t += (s.speed / s.length) * dt;
     if (s.t > 1.55) {
-      s.t    = -(0.3 + rnd() * 4.5);
-      s.speed = 78 + rnd() * 52;
+      s.t    = -(0.3 + rnd() * 5.0);
+      s.speed = 75 + rnd() * 55;
     }
 
-    // Projected tip (un-deflected) in logical coords
-    const ex  = s._rdx * RADIUS;
-    const ey  = s._rdy * RADIUS;
-    const ez  = s._rdz * RADIUS;
-    const tip = project(ex, ey, ez);
+    // Projected tip (logical coords)
+    const tip = project(s.dx * s.length, s.dy * s.length, s.dz * s.length);
 
-    // Cursor repulsion — smooth per-string deflection lerp
+    // Cursor repulsion: smooth spring deflection
     const ddx   = tip.lx - mx;
     const ddy   = tip.ly - my;
     const dist2 = ddx * ddx + ddy * ddy;
     let tgtDX = 0, tgtDY = 0;
     if (dist2 < REPEL_R * REPEL_R && dist2 > 0.01) {
       const dist = Math.sqrt(dist2);
-      const t    = 1 - dist / REPEL_R;
-      const push = t * t * REPEL_MAX;
+      const push = Math.pow(1 - dist / REPEL_R, 2) * REPEL_MAX;
       tgtDX = (ddx / dist) * push;
       tgtDY = (ddy / dist) * push;
     }
-    // Fast to deflect, slower to return (spring feel)
     const kD = dist2 < REPEL_R * REPEL_R
-      ? 1 - Math.pow(0.005, dt)   // fast rise  (τ ≈ 80 ms)
-      : 1 - Math.pow(0.035, dt);  // slow return (τ ≈ 500 ms)
+      ? 1 - Math.pow(0.004, dt)   // fast rise   τ ≈ 60 ms
+      : 1 - Math.pow(0.030, dt);  // slow return τ ≈ 600 ms
     s.deflX += (tgtDX - s.deflX) * kD;
     s.deflY += (tgtDY - s.deflY) * kD;
 
     const tlx = tip.lx + s.deflX;
     const tly = tip.ly + s.deflY;
 
-    // Depth: rdz in [-1,1].  rdz=-1 (toward viewer) = front.
-    const depth     = (s._rdz + 1) * 0.5;   // 0 = front, 1 = back
-    const baseAlpha = 0.21 - depth * 0.15;  // 0.21 → 0.06
-    const lineW     = 0.88 - depth * 0.46;  // 0.88 → 0.42
+    // Depth: dz ∈ [-1,1]; dz<0 = toward viewer (front), dz>0 = away (back)
+    const depth     = (s.dz + 1) * 0.5;    // 0 = front, 1 = back
+    const baseAlpha = 0.22 - depth * 0.16;  // 0.22 → 0.06
+    const lineW     = 0.90 - depth * 0.50;  // 0.90 → 0.40
 
     // ── Base string ────────────────────────────────────────────────
     ctx.save();
     ctx.beginPath();
-    ctx.moveTo(CX * sx, CY * sy);
+    ctx.moveTo(FOCAL_SX * sx, FOCAL_SY * sy);
     ctx.lineTo(tlx * sx, tly * sy);
-    ctx.strokeStyle = `rgba(16,120,243,${Math.max(0.02, baseAlpha).toFixed(3)})`;
+    ctx.strokeStyle = `rgba(16,120,243,${Math.max(0.03, baseAlpha).toFixed(3)})`;
     ctx.lineWidth   = Math.max(0.25, lineW);
     ctx.stroke();
     ctx.restore();
@@ -184,15 +173,17 @@ function frame(ts) {
       const tHead = Math.min(1, t);
       const tTail = Math.max(0, t - 0.30);
 
-      // Spark travels the true 3-D line; blend toward deflected tip near end
-      const blend = Math.max(0, (tHead - 0.75) / 0.25);
-      const hRaw  = project(s._rdx*RADIUS*tHead, s._rdy*RADIUS*tHead, s._rdz*RADIUS*tHead);
-      const tRaw  = project(s._rdx*RADIUS*tTail, s._rdy*RADIUS*tTail, s._rdz*RADIUS*tTail);
+      // Blend spark toward deflected tip as it approaches t=1
+      const blend    = Math.max(0, (tHead - 0.78) / 0.22);
+      const tailBl   = tHead > 0.01 ? blend * (tTail / tHead) : 0;
+
+      const hRaw = project(s.dx*s.length*tHead, s.dy*s.length*tHead, s.dz*s.length*tHead);
+      const tRaw = project(s.dx*s.length*tTail, s.dy*s.length*tTail, s.dz*s.length*tTail);
 
       const hLx = hRaw.lx + s.deflX * blend;
       const hLy = hRaw.ly + s.deflY * blend;
-      const tLx = tRaw.lx + s.deflX * blend * (tTail / Math.max(0.01, tHead));
-      const tLy = tRaw.ly + s.deflY * blend * (tTail / Math.max(0.01, tHead));
+      const tLx = tRaw.lx + s.deflX * tailBl;
+      const tLy = tRaw.ly + s.deflY * tailBl;
 
       const ef = t < 0.08 ? t / 0.08 : 1;
       const sa = (1 - depth * 0.55) * ef;
@@ -213,7 +204,7 @@ function frame(ts) {
       ctx.restore();
     }
 
-    // ── Tip dot ────────────────────────────────────────────────────
+    // ── Tip dot with glow ──────────────────────────────────────────
     const glowTgt = (s.t > 0.85 && s.t < 1.22) ? 1 : 0;
     s.dotGlow += (glowTgt - s.dotGlow) * (glowTgt > s.dotGlow ? kRise : kFall);
     const dg   = s.dotGlow;
