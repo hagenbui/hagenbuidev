@@ -30,77 +30,66 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// ── 3-D perspective ───────────────────────────────────────────────────
-// Focal origin sits just below the bottom-centre of the frame.
-// project() maps a 3-D world point (relative to origin) → logical screen coords.
-const FL       = 1400;           // perspective focal length (logical px)
-const FOCAL_SX = VW / 2;        // screen-x of focal origin
-const FOCAL_SY = VH + 42;       // screen-y of focal origin (below frame)
+// ── Sphere geometry ───────────────────────────────────────────────────
+// Center projected to screen-centre; strings radiate outward in full 3-D.
+const CX     = VW / 2;    // 600  — sphere centre x (logical)
+const CY     = VH / 2;    // 280  — sphere centre y (logical)
+const RADIUS = 260;        // sphere radius (logical px)
+const CAM_Z  = 1400;       // perspective focal length
 
 function project(x, y, z) {
-  const w = FL / (FL + z);
-  return { lx: x * w + FOCAL_SX, ly: -y * w + FOCAL_SY };
+  const w = CAM_Z / (CAM_Z + z);
+  return { lx: x * w + CX, ly: -y * w + CY };
 }
 
-// ── Seeded RNG for stable layout ──────────────────────────────────────
-let seed = 20250101;
+// ── Seeded RNG ────────────────────────────────────────────────────────
+let seed = 42317;
 function rnd() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
 
-// ── Build hemisphere lines (Fibonacci spiral — uniform solid angle) ───
-// dy > 0 always  →  every line points into the upper hemisphere.
-const N = 88;
-const lines = [];
+// ── Build full-sphere strings via Fibonacci sampling ──────────────────
+// cosT spans 1 → -1 so every direction is covered (not just upper hemisphere).
+const N = 120;
+const strings = [];
 for (let i = 0; i < N; i++) {
-  const cosT = 1 - (i + 0.5) / N;           // 1 = top pole, 0 = equator
+  const cosT = 1 - (2 * i + 1) / N;
   const sinT = Math.sqrt(1 - cosT * cosT);
-  const phi  = i * 2.399963;                 // golden angle  →  even azimuthal spread
+  const phi  = i * 2.399963;
 
-  const dx = sinT * Math.cos(phi);
-  const dy = cosT;
-  const dz = sinT * Math.sin(phi);
-
-  lines.push({
-    dx, dy, dz,
-    length:   200 + cosT * 310 + rnd() * 90,   // top lines are longest
-    t:        -(rnd() * 5.5),                   // staggered pre-delay
-    speed:    72 + rnd() * 52,                  // 72–124 logical px / s  (slow)
+  strings.push({
+    dx: sinT * Math.cos(phi),
+    dy: cosT,
+    dz: sinT * Math.sin(phi),
+    t:       -(rnd() * 5.0),
+    speed:    78 + rnd() * 52,   // 78–130 logical px / s  (slow)
     dotGlow:  0,
-    // filled each frame:
+    deflX: 0, deflY: 0,          // current tip deflection (smooth)
     _rdx: 0, _rdy: 0, _rdz: 0,
   });
 }
 
-// ── Rotation state (cursor drives smooth tilt) ────────────────────────
-let rotX =  0.10, rotY = 0.00;   // slight forward lean at rest
-let tgtX =  0.10, tgtY = 0.00;
+// ── Auto-rotation (Y axis only — cursor does NOT rotate) ──────────────
+let spinY = 0;
+const SPIN_RATE = 0.10;   // rad / s  (~63 s per full revolution)
 
-let mx = VW / 2, my = VH / 2;
+// ── Cursor repulsion ──────────────────────────────────────────────────
+const REPEL_R   = 145;   // influence radius (logical px)
+const REPEL_MAX = 90;    // max deflection at cursor centre (logical px)
+
+let mx = -9999, my = -9999;  // start off-canvas so nothing deflects on load
 canvas.addEventListener('mousemove', e => {
   const r = canvas.getBoundingClientRect();
   mx = (e.clientX - r.left) / r.width  * VW;
   my = (e.clientY - r.top)  / r.height * VH;
 });
-canvas.addEventListener('mouseleave', () => { mx = VW / 2; my = VH / 2; });
+canvas.addEventListener('mouseleave', () => { mx = -9999; my = -9999; });
 
-// ── Rotate a direction vector (Y-axis, then X-axis) ───────────────────
-function rotVec(dx, dy, dz, rx, ry) {
-  // Y rotation
-  const nx  =  dx * Math.cos(ry) - dz * Math.sin(ry);
-  const nz  =  dx * Math.sin(ry) + dz * Math.cos(ry);
-  // X rotation
-  const ny  =  dy * Math.cos(rx) + nz * Math.sin(rx);
-  const nz2 = -dy * Math.sin(rx) + nz * Math.cos(rx);
-  return { rx: nx, ry: ny, rz: nz2 };
-}
-
-// ── Background gradient (emanates from focal point) ───────────────────
+// ── Background ────────────────────────────────────────────────────────
 function drawBg() {
-  const cx = FOCAL_SX * sx, cy = FOCAL_SY * sy;
-  const r  = VH * 1.28 * Math.min(sx, sy);
-  const g  = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-  g.addColorStop(0.00, 'rgba(188,221,255,0.68)');
-  g.addColorStop(0.32, 'rgba(210,233,255,0.38)');
-  g.addColorStop(0.62, 'rgba(228,242,255,0.17)');
+  const R = Math.max(VW, VH) * 0.82 * Math.min(sx, sy);
+  const g = ctx.createRadialGradient(CX*sx, CY*sy, 0, CX*sx, CY*sy, R);
+  g.addColorStop(0.00, 'rgba(188,221,255,0.52)');
+  g.addColorStop(0.42, 'rgba(210,233,255,0.26)');
+  g.addColorStop(0.75, 'rgba(228,242,255,0.10)');
   g.addColorStop(1.00, 'rgba(255,255,255,0.00)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -113,100 +102,128 @@ function frame(ts) {
   const dt = Math.min((ts - lastTs) / 1000, 0.05);
   lastTs = ts;
 
-  // Smooth rotation toward cursor target
-  tgtY =  ((mx / VW) - 0.5) *  0.52;
-  tgtX = -((my / VH) - 0.5) *  0.26 + 0.10;
-  const kRot = 1 - Math.pow(0.015, dt);
-  rotY += (tgtY - rotY) * kRot;
-  rotX += (tgtX - rotX) * kRot;
+  // Auto-spin Y + slow nodding tilt on X (makes the sphere feel alive)
+  spinY += SPIN_RATE * dt;
+  const tiltX = Math.sin(ts * 0.00016) * 0.12;
 
-  // Rotate all line directions
-  lines.forEach(l => {
-    const r = rotVec(l.dx, l.dy, l.dz, rotX, rotY);
-    l._rdx = r.rx; l._rdy = r.ry; l._rdz = r.rz;
+  const cosY = Math.cos(spinY), sinY = Math.sin(spinY);
+  const cosX = Math.cos(tiltX), sinX = Math.sin(tiltX);
+
+  // Rotate all string directions
+  strings.forEach(s => {
+    const rx =  s.dx * cosY - s.dz * sinY;
+    const rz0 = s.dx * sinY + s.dz * cosY;
+    const ry  =  s.dy * cosX + rz0 * sinX;
+    const rz  = -s.dy * sinX + rz0 * cosX;
+    s._rdx = rx; s._rdy = ry; s._rdz = rz;
   });
 
-  // Painter's algorithm: draw back (high rdz) before front (low rdz)
-  lines.sort((a, b) => b._rdz - a._rdz);
+  // Painter's sort: back (high rdz) drawn before front (low rdz)
+  strings.sort((a, b) => b._rdz - a._rdz);
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawBg();
 
-  const p0px = FOCAL_SX * sx;
-  const p0py = FOCAL_SY * sy;
-
-  // Easing constants for dot glow
   const kRise = 1 - Math.pow(0.002, dt);
   const kFall = 1 - Math.pow(0.018, dt);
 
-  lines.forEach(l => {
+  strings.forEach(s => {
     // Advance spark
-    l.t += (l.speed / l.length) * dt;
-    if (l.t > 1.55) {
-      l.t    = -(0.4 + rnd() * 4.8);
-      l.speed = 72 + rnd() * 52;
+    s.t += (s.speed / RADIUS) * dt;
+    if (s.t > 1.55) {
+      s.t    = -(0.3 + rnd() * 4.5);
+      s.speed = 78 + rnd() * 52;
     }
 
-    // Endpoint in 3-D (rotated space)
-    const ex = l._rdx * l.length;
-    const ey = l._rdy * l.length;
-    const ez = l._rdz * l.length;
-    const p1 = project(ex, ey, ez);
+    // Projected tip (un-deflected) in logical coords
+    const ex  = s._rdx * RADIUS;
+    const ey  = s._rdy * RADIUS;
+    const ez  = s._rdz * RADIUS;
+    const tip = project(ex, ey, ez);
 
-    // Depth  0 = facing viewer,  1 = facing away
-    const depth      = (l._rdz + 1) * 0.5;
-    const baseAlpha  = 0.22 - depth * 0.16;   // 0.22 → 0.06
-    const baseWidth  = 0.90 - depth * 0.48;   // 0.90 → 0.42
+    // Cursor repulsion — smooth per-string deflection lerp
+    const ddx   = tip.lx - mx;
+    const ddy   = tip.ly - my;
+    const dist2 = ddx * ddx + ddy * ddy;
+    let tgtDX = 0, tgtDY = 0;
+    if (dist2 < REPEL_R * REPEL_R && dist2 > 0.01) {
+      const dist = Math.sqrt(dist2);
+      const t    = 1 - dist / REPEL_R;
+      const push = t * t * REPEL_MAX;
+      tgtDX = (ddx / dist) * push;
+      tgtDY = (ddy / dist) * push;
+    }
+    // Fast to deflect, slower to return (spring feel)
+    const kD = dist2 < REPEL_R * REPEL_R
+      ? 1 - Math.pow(0.005, dt)   // fast rise  (τ ≈ 80 ms)
+      : 1 - Math.pow(0.035, dt);  // slow return (τ ≈ 500 ms)
+    s.deflX += (tgtDX - s.deflX) * kD;
+    s.deflY += (tgtDY - s.deflY) * kD;
 
-    // ── Base line ──────────────────────────────────────────────────
+    const tlx = tip.lx + s.deflX;
+    const tly = tip.ly + s.deflY;
+
+    // Depth: rdz in [-1,1].  rdz=-1 (toward viewer) = front.
+    const depth     = (s._rdz + 1) * 0.5;   // 0 = front, 1 = back
+    const baseAlpha = 0.21 - depth * 0.15;  // 0.21 → 0.06
+    const lineW     = 0.88 - depth * 0.46;  // 0.88 → 0.42
+
+    // ── Base string ────────────────────────────────────────────────
     ctx.save();
     ctx.beginPath();
-    ctx.moveTo(p0px, p0py);
-    ctx.lineTo(p1.lx * sx, p1.ly * sy);
-    ctx.strokeStyle = `rgba(16,120,243,${Math.max(0, baseAlpha).toFixed(3)})`;
-    ctx.lineWidth   = Math.max(0.25, baseWidth);
+    ctx.moveTo(CX * sx, CY * sy);
+    ctx.lineTo(tlx * sx, tly * sy);
+    ctx.strokeStyle = `rgba(16,120,243,${Math.max(0.02, baseAlpha).toFixed(3)})`;
+    ctx.lineWidth   = Math.max(0.25, lineW);
     ctx.stroke();
     ctx.restore();
 
-    // ── Traveling comet spark ──────────────────────────────────────
-    const t = l.t;
-    if (t > 0 && t < 1.24) {
+    // ── Traveling spark ────────────────────────────────────────────
+    const t = s.t;
+    if (t > 0 && t < 1.22) {
       const tHead = Math.min(1, t);
       const tTail = Math.max(0, t - 0.30);
 
-      const hEp = project(l._rdx*l.length*tHead, l._rdy*l.length*tHead, l._rdz*l.length*tHead);
-      const tEp = project(l._rdx*l.length*tTail, l._rdy*l.length*tTail, l._rdz*l.length*tTail);
+      // Spark travels the true 3-D line; blend toward deflected tip near end
+      const blend = Math.max(0, (tHead - 0.75) / 0.25);
+      const hRaw  = project(s._rdx*RADIUS*tHead, s._rdy*RADIUS*tHead, s._rdz*RADIUS*tHead);
+      const tRaw  = project(s._rdx*RADIUS*tTail, s._rdy*RADIUS*tTail, s._rdz*RADIUS*tTail);
 
-      const ef = t < 0.10 ? t / 0.10 : 1;
+      const hLx = hRaw.lx + s.deflX * blend;
+      const hLy = hRaw.ly + s.deflY * blend;
+      const tLx = tRaw.lx + s.deflX * blend * (tTail / Math.max(0.01, tHead));
+      const tLy = tRaw.ly + s.deflY * blend * (tTail / Math.max(0.01, tHead));
+
+      const ef = t < 0.08 ? t / 0.08 : 1;
       const sa = (1 - depth * 0.55) * ef;
 
-      const g = ctx.createLinearGradient(tEp.lx*sx, tEp.ly*sy, hEp.lx*sx, hEp.ly*sy);
+      const g = ctx.createLinearGradient(tLx*sx, tLy*sy, hLx*sx, hLy*sy);
       g.addColorStop(0,    'rgba(16,120,243,0)');
-      g.addColorStop(0.55, `rgba(16,120,243,${(0.30 * sa).toFixed(3)})`);
+      g.addColorStop(0.55, `rgba(16,120,243,${(0.28 * sa).toFixed(3)})`);
       g.addColorStop(1,    `rgba(142,213,255,${(0.85 * sa).toFixed(3)})`);
 
       ctx.save();
       ctx.beginPath();
-      ctx.moveTo(tEp.lx*sx, tEp.ly*sy);
-      ctx.lineTo(hEp.lx*sx, hEp.ly*sy);
+      ctx.moveTo(tLx*sx, tLy*sy);
+      ctx.lineTo(hLx*sx, hLy*sy);
       ctx.strokeStyle = g;
-      ctx.lineWidth   = (1.65 - depth * 0.35) * Math.min(sx, sy);
+      ctx.lineWidth   = (1.6 - depth * 0.4) * Math.min(sx, sy);
       ctx.lineCap     = 'round';
       ctx.stroke();
       ctx.restore();
     }
 
-    // ── Tip dot with glow ──────────────────────────────────────────
-    const glowTgt = (l.t > 0.83 && l.t < 1.24) ? 1 : 0;
-    l.dotGlow += (glowTgt - l.dotGlow) * (glowTgt > l.dotGlow ? kRise : kFall);
-    const dg  = l.dotGlow;
-    const dotR = (1.25 + dg * 2.8) * (1 - depth * 0.38) * Math.min(sx, sy);
+    // ── Tip dot ────────────────────────────────────────────────────
+    const glowTgt = (s.t > 0.85 && s.t < 1.22) ? 1 : 0;
+    s.dotGlow += (glowTgt - s.dotGlow) * (glowTgt > s.dotGlow ? kRise : kFall);
+    const dg   = s.dotGlow;
+    const dotR = (1.1 + dg * 2.4) * (1 - depth * 0.42) * Math.min(sx, sy);
 
-    if (dotR > 0.2) {
+    if (dotR > 0.15) {
       ctx.save();
       ctx.beginPath();
-      ctx.arc(p1.lx * sx, p1.ly * sy, dotR, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(16,120,243,${Math.min(1, baseAlpha + dg * 0.62).toFixed(3)})`;
+      ctx.arc(tlx * sx, tly * sy, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(16,120,243,${Math.min(1, baseAlpha + dg * 0.58).toFixed(3)})`;
       ctx.fill();
       ctx.restore();
     }
