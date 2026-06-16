@@ -15,7 +15,10 @@ try:
         ("homepage/data-flow.html", "section1-anim2-640x428"),
         ("homepage/blockchain.html", "section1-anim3-640x428"),
         ("about/about-hero.html", "about-hero-640x428"),
-        ("about/about-hero-right.html", "about-hero-right-640x428")
+        ("about/about-hero-right.html", "about-hero-right-640x428"),
+        ("about/dual-expert.html", "about-dual-expert-640x428"),
+        ("about/orbital-delivery.html", "about-orbital-delivery-640x428"),
+        ("about/why-choose-layer-1s.html", "about-why-choose-layer1s-640x428"),
     ]
     
     for anim_file, name in anims:
