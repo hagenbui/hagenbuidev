@@ -92,14 +92,12 @@
   .globe-marker.state-3 .marker-card { display: flex; }
   .globe-marker.state-2 .marker-card {
     width: 40px; height: 40px; padding: 2px; gap: 0;
-    background: rgba(255,255,255,0.5);
-    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    background: rgba(255,255,255,0.88);
     border: 1px solid #bce5ff;
   }
   .globe-marker.state-3 .marker-card {
     padding: 8px 16px; gap: 12px;
-    background: rgba(255,255,255,0.5);
-    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    background: rgba(255,255,255,0.88);
     border: 1px solid #bce5ff;
   }
   .globe-marker.varmeta.state-2 .marker-card,
@@ -148,8 +146,7 @@
   .globe-marker.pin-mode .marker-card {
     display: flex; bottom: 8px;
     padding: 5px; gap: 0;
-    background: rgba(255,255,255,0.88);
-    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    background: rgba(255,255,255,0.92);
     border: 1px solid #bce5ff;
     transition: padding 0.2s ease, gap 0.2s ease;
   }
@@ -406,8 +403,9 @@ cv.addEventListener(&#x27;pointermove&#x27;, e =&gt; {
 const clock = new THREE.Clock();
 const tempV = new THREE.Vector3();
 
-(function animate() {
-  requestAnimationFrame(animate);
+let rafId = null, running = false;
+function animate() {
+  rafId = requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
   if (!isDown) {
     if (isLocked && targetRotY !== null) {
@@ -469,8 +467,6 @@ const tempV = new THREE.Vector3();
         marker.currentState = 0;
         marker.visibleSince = 0;
       }
-      if (marker.timeVal) marker.timeVal.textContent = getLocalTime(loc.offset);
-      if (marker.timeTz)  marker.timeTz.textContent  = ' ' + loc.tzName;
       if (loc.isHub) { hubPos.x = pin.sx; hubPos.y = PIN_Y; hubPos.visible = true; }
       return;
     }
@@ -488,8 +484,6 @@ const tempV = new THREE.Vector3();
         marker.currentState = 1;
         marker.visibleSince = 0;
       }
-      if (marker.timeVal) marker.timeVal.textContent = getLocalTime(loc.offset);
-      if (marker.timeTz)  marker.timeTz.textContent  = ' ' + loc.tzName;
       return;
     }
 
@@ -506,8 +500,6 @@ const tempV = new THREE.Vector3();
           marker.currentState = target;
           marker.el.className = 'globe-marker state-' + target + ' varmeta';
         }
-        if (marker.timeVal) marker.timeVal.textContent = getLocalTime(loc.offset);
-        if (marker.timeTz)  marker.timeTz.textContent  = ' ' + loc.tzName;
       } else {
         marker.visibleSince = 0;
         if (marker.currentState !== 1) {
@@ -533,8 +525,6 @@ const tempV = new THREE.Vector3();
           marker.currentState = target;
           marker.el.className = 'globe-marker state-' + target;
         }
-        if (marker.timeVal) marker.timeVal.textContent = getLocalTime(loc.offset);
-        if (marker.timeTz)  marker.timeTz.textContent  = ' ' + loc.tzName;
       } else {
         marker.el.style.opacity = '0';
         marker.visibleSince = 0;
@@ -560,11 +550,28 @@ const tempV = new THREE.Vector3();
   });
 
   renderer.render(scene, camera);
-}());
+}
 
 // ---- Responsive -------------------------------------------------------------
 frame();
 new ResizeObserver(frame).observe(root);
+
+// ---- Time labels: refresh once/sec instead of every frame -------------------
+function refreshTimes() {
+  tooltips.forEach(m => {
+    if (m.timeVal) m.timeVal.textContent = getLocalTime(m.loc.offset);
+    if (m.timeTz)  m.timeTz.textContent  = ' ' + m.loc.tzName;
+  });
+}
+refreshTimes();
+setInterval(refreshTimes, 1000);
+
+// ---- Render gating: pause the loop when off-screen or tab hidden ------------
+function startLoop() { if (!running) { running = true; clock.getDelta(); animate(); } }
+function stopLoop()  { if (running)  { running = false; cancelAnimationFrame(rafId); } }
+new IntersectionObserver(es => { es[0].isIntersecting ? startLoop() : stopLoop(); }, { threshold: 0 }).observe(root);
+document.addEventListener('visibilitychange', () => { document.hidden ? stopLoop() : startLoop(); });
+startLoop();
 &lt;/script&gt; &lt;/body&gt; &lt;/html&gt;" scrolling="no" allowtransparency="true" frameborder="0"></iframe>
 </body>
 
